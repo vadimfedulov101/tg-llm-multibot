@@ -60,7 +60,6 @@ class Selector(Generator):
 
         return rate, ok
 
-
     def _rate_average(self, pbar, response: str, idx: int, size: int) -> float:
         """Calculate average rate from up to batch size rates.
 
@@ -81,7 +80,8 @@ class Selector(Generator):
 
         settings = self._settings
 
-        user_prompt = settings.rate_prompt.format(self.dialog_str, response)
+        user_prompt = settings.rate_prompt.format(
+            self._reply_chain_str, response)
         rate_batch_size = settings.rate_batch_size
 
         max_attempts = rate_batch_size * 10

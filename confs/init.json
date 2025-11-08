@@ -1,13 +1,10 @@
 {
 	"keysAPI": [
-		"bot1_API_KEY",
-		"bot2_API_KEY"
+		"7990744544:AAGQFfOIEAl4vBGA8AkUrRFVf5j5YZFYgZI"
 	],
-    "admins": ["admin1_id", "admin2_id"],
-	"orders": {
-		"ludoviko_bot": ["/eo"]
-	},
+    "admins": ["veotri"],
+	"orders": {},
 	"config_path": "./confs/bots",
-	"history_path": "./history.json",
-	"memory_limit": 5
+	"history_path": "./history/history.json",
+	"memory_limit": 10
 }

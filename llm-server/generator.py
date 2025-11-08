@@ -36,85 +36,37 @@ class Generator:
         self,
         llm: LLM,
         settings: Settings,
-        dialog: list[str],
+        chat_context: list[str],
+        reply_chain: list[str],
         responses: Optional[list[str]],
     ) -> None:
-        """Initialize Generator class.
-
-        Args:
-            self
-            llm: LLM
-            settings: Settings
-            dialog: list[str]
-            responses: Optional[list[str]]
-
-        Returns: None
-        """
         self._llm = llm
         self._settings = settings
-        self._dialog = self.normalize_dialog(dialog)
+        self._chat_context = self.normalize_text(chat_context)
+        self._chat_context_str = "\n".join(chat_context)
+        self._reply_chain = self.normalize_text(reply_chain)
+        self._reply_chain_str = "\n".join(reply_chain)
 
         self._set_stopping_criteria()
         self._set_token_num()
 
         self.responses = responses
 
-
     @staticmethod
-    def normalize_dialog(dialog: str) -> list[str]:
-        """Normalize self.dialog by terminating new line characters.
-
-        Args:
-            self
-            dialog: str
-
-        Returns: list[str]
-        """
-        for i, msg in enumerate(dialog):
+    def normalize_text(text: list[str]) -> list[str]:
+        for i, msg in enumerate(text):
             if "\n" in msg:
-                dialog[i] = re.sub("\n+", r"\\n", msg)
-        return dialog
-
-
-    @property
-    def dialog(self) -> str:
-        """Set self.dialog as property.
-
-        Args:
-            self
-
-        Returns: str
-        """
-        return self._dialog
-
-
-    @property
-    def dialog_str(self) -> str:
-        """Set self.dialog_str as property.
-
-        Args:
-            self
-
-        Returns: str
-        """
-        return "\n".join(self.dialog)
-
+                text[i] = re.sub("\n+", r"\\n", msg)
+        return text
 
     def _set_stopping_criteria(self) -> None:
-        """Set self.stopping_criteria and self.stop_token_ids.
-
-        Args:
-            self
-
-        Returns: None
-        """
         tokenizer = self._llm.tokenizer
-        dialog = self.dialog
+        reply_chain = self._reply_chain
 
-        stopping_criteria, stop_token_ids = get_stop_vars(tokenizer, dialog)
+        stopping_criteria, stop_token_ids = get_stop_vars(tokenizer,
+                                                          reply_chain)
         self.stopping_criteria = stopping_criteria
         self.stop_token_ids = stop_token_ids
-
 
     def _set_token_num(self) -> None:
         """Set self.max_new_tokens token number based on mode and values.
@@ -136,7 +88,7 @@ class Generator:
         tokenizer = self._llm.tokenizer
         mode = self._llm.mode
         settings = self._settings
-        dialog = self.dialog
+        reply_chain = self._reply_chain
 
         match mode:
             case "rate":
@@ -155,7 +107,8 @@ class Generator:
                     self.max_new_tokens = response_tokens
                 # Set with shift
                 elif settings.response_token_shift != 0:
-                    inputs = tokenizer.encode(dialog[-1], return_tensors="pt")
+                    inputs = tokenizer.encode(
+                        reply_chain[-1], return_tensors="pt")
                     self.max_new_tokens = inputs.size(1) + response_token_shift
                 else:
                     err = ValueError(self.RESP_TOKEN_ERR_MSG)
@@ -164,36 +117,18 @@ class Generator:
                 err = ValueError(self.MODE_ERR_MSG % mode)
                 raise err
 
-
     def _new_prompt(self, user_prompt: str) -> str:
-        """Format new prompt based on class templates and user prompt.
-
-        Args:
-            self
-            user_prompt: str
-
-        Returns: str
-        """
         settings = self._settings
 
         system_prompt = settings.system_prompt
 
-        prompt  = self.SYSTEM_TEMPLATE % system_prompt
+        prompt = self.SYSTEM_TEMPLATE % system_prompt
         prompt += self.USER_TEMPLATE % user_prompt
         prompt += self.ASSISTANT_TEMPLATE
 
         return prompt
 
-
     def generate(self, user_prompt: str) -> str:
-        """Generate response based on user prompt.
-
-        Args:
-            self
-            user_prompt: str
-
-        Returns: str
-        """
         model = self._llm.model
         tokenizer = self._llm.tokenizer
         settings = self._settings

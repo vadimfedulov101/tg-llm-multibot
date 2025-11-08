@@ -2,14 +2,17 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
-	"io"
 	"os"
 	"strings"
 	"time"
+
+	"tg-handler/memory"
 )
 
 // Server specific constant
@@ -41,8 +44,9 @@ type Settings struct {
 
 // Request to send
 type RequestBody struct {
-	Dialog   []string `json:"dialog"`
-	Settings Settings `json:"settings"`
+	ChatContext []string `json:"chat_context"`
+	ReplyChain  []string `json:"reply_chain"`
+	Settings    Settings `json:"settings"`
 }
 
 // Response to receive
@@ -50,33 +54,47 @@ type ResponseBody struct {
 	Response string `json:"response"`
 }
 
-func loadSettings(config string) Settings {
-	var settings Settings
-
-	// Read JSON data from file
-	data, err := os.ReadFile(config)
-	if err != nil {
-		log.Fatalf("[OS] Failed to read settings file: %s", err)
-	}
-
-	// Decode JSON data to settings
-	err = json.Unmarshal(data, &settings)
-	if err != nil {
-		log.Fatalf("[OS] Failed to unmarshal settings: %s", err)
-	}
-	return settings
-}
-
 // Request constructor
-func newRequestBody(dialog []string, config string) *RequestBody {
-	// Return request body: dialog, settings
+func newRequestBody(c []string, r []string, conf string) *RequestBody {
 	return &RequestBody{
-		Dialog:   dialog,
-		Settings: loadSettings(config),
+		ChatContext: c,
+		ReplyChain:  r,
+		Settings:    loadSettings(conf),
 	}
 }
 
-func sendRequestBody(requestBody *RequestBody) (string, error) {
+// Send request to LLM server
+func Send(ctx context.Context, mem *memory.Memory, conf string, cTitle string) (string, error) {
+	// Prepare request body
+	requestBody := newRequestBody(mem.ChatContext, mem.ReplyChain, conf)
+
+	// Add chat title to system prompt if space reserved
+	prompt := requestBody.Settings.SystemPrompt
+	if strings.Count(prompt, "%s") != 1 {
+		errMsg := "[OS] No/many %%s in system prompt. Use one for chat title."
+		return "", fmt.Errorf(errMsg)
+	}
+	if strings.Contains(prompt, "%s") {
+		prompt = fmt.Sprintf(prompt, cTitle)
+	}
+	requestBody.Settings.SystemPrompt = prompt
+
+	// Send request body (<MAX_SEND_TRY> tries)
+	var text string
+	var err error
+	for i := range MAX_SEND_TRY {
+		text, err = sendRequestBody(ctx, requestBody)
+		if err == nil {
+			break
+		}
+		log.Printf("[API] Try %d: %v", i, err)
+		time.Sleep(RETRY_TIME * (1 << (i + 1)))
+	}
+
+	return text, err
+}
+
+func sendRequestBody(ctx context.Context, requestBody *RequestBody) (string, error) {
 	// Encode request body to JSON data
 	jsonData, err := json.Marshal(requestBody)
 	if err != nil {
@@ -84,7 +102,7 @@ func sendRequestBody(requestBody *RequestBody) (string, error) {
 	}
 
 	// Make new POST request with JSON data
-	request, err := http.NewRequest("POST", API, bytes.NewBuffer(jsonData))
+	request, err := http.NewRequestWithContext(ctx, "POST", API, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("[API] Failed to make request: %s", err)
 	}
@@ -114,33 +132,19 @@ func sendRequestBody(requestBody *RequestBody) (string, error) {
 	return responseBody.Response, nil
 }
 
-// Send request to LLM server
-func Send(dialog []string, config string, chatTitle string) (string, error) {
-	// Prepare request body
-	requestBody := newRequestBody(dialog, config)
+func loadSettings(conf string) Settings {
+	var settings Settings
 
-	// Add chat title to system prompt if space reserved
-	prompt := requestBody.Settings.SystemPrompt
-	if strings.Count(prompt, "%s") != 1 {  
-		errMsg := "[OS] No/many %%s in system prompt. Use one for chat title."
-		return "", fmt.Errorf(errMsg)  
-	}  
-	if strings.Contains(prompt, "%s") {
-		prompt = fmt.Sprintf(prompt, chatTitle)
-	}
-	requestBody.Settings.SystemPrompt = prompt
-
-	// Send request body (<MAX_SEND_TRY> tries)
-	var text string
-	var err error
-	for i := range MAX_SEND_TRY {
-		text, err = sendRequestBody(requestBody)
-		if err == nil {
-			break
-		}
-		log.Printf("[API] Try %d: %v", i, err)
-		time.Sleep(RETRY_TIME * (1 << (i+1)))
+	// Read JSON data from file
+	data, err := os.ReadFile(conf)
+	if err != nil {
+		log.Fatalf("[OS] Failed to read settings file: %s", err)
 	}
 
-	return text, err
+	// Decode JSON data to settings
+	err = json.Unmarshal(data, &settings)
+	if err != nil {
+		log.Fatalf("[OS] Failed to unmarshal settings: %s", err)
+	}
+	return settings
 }

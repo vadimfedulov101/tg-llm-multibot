@@ -70,7 +70,7 @@ func NewChatInfo(o *OrderInfo, memoryLimit int) *ChatInfo {
 	sender := o.Sender
 
 	return &ChatInfo{
-		OrderInfo:  *o,
+		OrderInfo:   *o,
 		CID:         getCID(message),
 		ChatTitle:   getChatTitle(message, sender),
 		MemoryLimit: memoryLimit,

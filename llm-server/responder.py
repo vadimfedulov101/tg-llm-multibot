@@ -34,29 +34,22 @@ class Responder(Generator):
     FATAL_MSG = "No thoughts generated with prompt: %s."
 
     def _think(self, chain_prompt: str, thought_chain: NDArray) -> list[str]:
-        """Generate thought based on chain prompt with expanded thought chain.
-
-        Args:
-            chain_prompt: str
-            thought_chain: NDArray
-
-        Returns: list[str]
-
-        Raises
-        ------
-            ValueError: problem
-
-        """
+        """Generate thought based on chain prompt with thought chain."""
         thoughts = []
 
         settings = self._settings
-        dialog, dialog_str = self.dialog, self.dialog_str
-        verbose = self._llm.verbose
-
         batch_size = settings.response_batch_size
         max_attempts = batch_size * 3
+        verbose = self._llm.verbose
 
-        user_prompt = chain_prompt.format(dialog_str, *thought_chain)
+        chat_context = self._chat_context
+        chat_context_str = self._chat_context_str
+
+        reply_chain = self._reply_chain
+        reply_chain_str = self._reply_chain_str
+
+        user_prompt = chain_prompt.format(
+            chat_context_str, reply_chain_str, *thought_chain)
         if verbose:
             print(user_prompt)
 
@@ -67,7 +60,8 @@ class Responder(Generator):
             thought_raw = self.generate(user_prompt)
             thought = clean(thought_raw)
 
-            ok, err = validate(thought, chain_prompt, dialog)
+            validation_context = chat_context + reply_chain
+            ok, err = validate(thought, chain_prompt, validation_context)
             if ok:
                 print(self.SUCCESS_MSG)
                 thoughts.append(thought)
@@ -87,15 +81,9 @@ class Responder(Generator):
 
         return thoughts
 
-
     @contextmanager
     def _temp_batch_size(self, new_size: int) -> None:
-        """Temporarily modify the batch size.
-
-        Args:
-            self
-            new_size: int
-        """
+        """Temporarily modify the batch size."""
         original = self._settings.response_batch_size
         self._settings.response_batch_size = new_size
         try:
@@ -103,52 +91,35 @@ class Responder(Generator):
         finally:
             self._settings.response_batch_size = original
 
-
     def respond(self) -> list[str]:
-        """Implement Chain of Thought algorithm.
-
-        Create and independently continue parrallel thought chains.
-        Treat thoughts as responses if think prompts exhausted.
-
-        Args:
-            self
-            chain_prompt: str
-            thought_chain: NDArray
-
-        Returns: list[str]
-
-        Raises
-        ------
-            ValueError: problem
-        """
+        """Implement Chain of Thought algorithm."""
         settings = self._settings
-        dialog_str = self.dialog_str
-
         chain_prompts = settings.chain_prompts
         batch_size = settings.response_batch_size
 
-        # For the initial think prompt
-        # batch generate first thoughts in the chains
+        # Generate initial thoughts for all parallel chains
         print("Step 1: CoT start")
-        thoughts = self._think(chain_prompts[0], np.array([dialog_str]))
+        chains = [[] for _ in range(batch_size)]  # Each chain starts empty
+        initial_thoughts = self._think(chain_prompts[0], np.array([]))
+
+        # Distribute initial thoughts to chains
+        for chain_idx, thought in enumerate(initial_thoughts):
+            if chain_idx < batch_size:
+                chains[chain_idx].append(thought)
 
         if len(chain_prompts) == 1:
-            return thoughts
-        thought_chains = np.array([thoughts])
-        dim_error = "Chain dimension mismatch"
-        assert thought_chains.shape[0] == len(chain_prompts), dim_error
+            return [chain[-1] for chain in chains if chain]
 
-        # For every non-initial think prompt
-        # accumulate next thoughts to continue the chains in parallel
+        # Continue each chain through remaining steps
         print("Step 2: CoT continue")
-        with self._temp_batch_size(self, 1):
-            for chain_prompt in chain_prompts[1:]:
-                thoughts.clear()
+        with self._temp_batch_size(1):
+            for step_idx, chain_prompt in enumerate(chain_prompts[1:], 1):
+                for chain_idx, chain in enumerate(chains):
+                    if len(chain) >= step_idx:  # Chain exists and is ready
+                        new_thoughts = self._think(
+                            chain_prompt, np.array(chain))
+                        if new_thoughts:
+                            chains[chain_idx].append(new_thoughts[0])
 
-                for j in range(batch_size):
-                    thoughts += self._think(chain_prompt, thought_chains[:, j])
-                thought_chains = np.vstack((thought_chains, thoughts))
-
-            responses = thoughts
-
-        return responses
+        # Return the final thought from each chain
+        return [chain[-1] for chain in chains if chain]

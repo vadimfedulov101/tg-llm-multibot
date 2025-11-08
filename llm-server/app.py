@@ -89,12 +89,14 @@ def generate(request: RequestBody) -> ResponseBody:
 
     # base data objects
     settings = request.settings
-    dialog = request.dialog
+    chat_context = request.chat_context
+    reply_chain = request.reply_chain
 
     # Generate responses
     responses = []
     llm.mode = "response"
-    responder = Responder(llm, settings, dialog, responses=None)
+    responder = Responder(llm, settings, chat_context,
+                          reply_chain, responses=None)
     try:
         responses = responder.respond()
     except ValueError:
@@ -103,7 +105,7 @@ def generate(request: RequestBody) -> ResponseBody:
     # Select best response via rating
     response_str = ""
     llm.mode = "rate"
-    selector = Selector(llm, settings, dialog, responses)
+    selector = Selector(llm, settings, chat_context, reply_chain, responses)
     try:
         response_str = selector.select()
     except ValueError:

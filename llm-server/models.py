@@ -16,6 +16,7 @@ class LLM:
     mode: Literal["response", "rate"] | None
     verbose: bool
 
+
 @dataclass
 class Settings:
     """Settings from bot/cmd config."""
@@ -33,10 +34,12 @@ class Settings:
     rate_tokens: int
     rate_batch_size: int
 
+
 class RequestBody(BaseModel):
     """Request passed to API endpoint."""
 
-    dialog: list[str]
+    chat_context: list[str]
+    reply_chain: list[str]
     settings: Settings
 
 

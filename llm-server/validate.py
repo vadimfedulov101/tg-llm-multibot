@@ -15,18 +15,12 @@ Implementation Notes:
 
 import re
 
-MAX_JACCARD_IDX = 0.5
+MAX_JACCARD_IDX = 0.1
 MIN_MSG_LEN = 2 / 3
 
 
 def _split_to_phrases(text: str) -> list[str]:
-    """Split phrases based on delimeters.
-
-    Args:
-        text: str
-
-    Returns: list[str]
-    """
+    """Split phrases based on delimeters."""
     delimiters = (".", "!", "?")
     pattern = "|".join(map(re.escape, delimiters))
     return re.split(pattern, text)
@@ -168,19 +162,19 @@ def validate(resp: str, prompt: str, dialog: list[str]) -> tuple[bool, str]:
 
     web = "[RETEJO]" in resp
     short = len(resp) < (len(last_msg) * MIN_MSG_LEN)
-    questioning = resp.count("?") > last_msg.count("?") + 1
-    repetitive = _is_repetitive(resp, prompt, dialog)
+    maybe_dialog = ":" in resp
+    # repetitive = _is_repetitive(resp, prompt, dialog)
 
     if web:
         err += " <Web>"
     if short:
         err += " <Short>"
-    if questioning:
-        err += " <Questioning>"
-    if repetitive:
-        err += " <Repetitive>"
+    if maybe_dialog:
+        err += " <Maybe Dialog>"
+    # if repetitive:
+    #    err += " <Repetitive>"
 
-    bad = web or short or questioning or repetitive
+    bad = web or short or maybe_dialog  # or repetitive
     ok = not bad
 
     return ok, err

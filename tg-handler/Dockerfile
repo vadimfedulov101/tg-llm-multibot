@@ -1,5 +1,5 @@
 # Stage 1: Compile Go application
-FROM golang:1.23-alpine AS builder
+FROM golang:1.25.4-alpine3.22 AS builder
 
 LABEL stage=gobuilder
 
@@ -16,7 +16,7 @@ COPY ./tg-handler .
 
 RUN apk update --no-cache && apk add --no-cache upx
 
-RUN go build -ldflags="-s -w" -tags lambda.norpc main.go && upx --best --lzma main
+RUN go build -ldflags="-s -w" main.go && upx --best --lzma main
 
 # Stage 2: Create a lightweight image
 FROM alpine

@@ -18,39 +18,19 @@ import re
 
 
 def _strip_verbalized_eos(text: str) -> str:
-    """Strip verbalized EOS.
-
-    Args:
-        text: str
-
-    Returs: str
-    """
     text = text.split("EOS")[0]
     return text
 
 
 def _strip_extra_names(text: str) -> str:
-    """Strip regex-matches of role identifyers.
-
-    Args:
-        text: str
-
-    Returs: str
-    """
-    text = re.sub(r"^.{0,25}\w{1,24}:\s?", "", text)
-    text = re.sub(r"\w{1,24}:\s?", "", text)
+    """Strip regex-matches of role identifyers."""
+    text = re.sub(r"^.{0,24}:\s*", "", text)
 
     return text
 
 
 def _strip_incomplete_sentences(text: str) -> str:
-    """Strip everything after last valid sentence punctuation sign (.!?).
-
-    Args:
-        text: str
-
-    Returs: str
-    """
+    """Strip everything after last valid sentence punctuation sign (.!?)."""
     if text:
         text = text[0].upper() + text[1:]
 
@@ -62,13 +42,7 @@ def _strip_incomplete_sentences(text: str) -> str:
 
 
 def _fix_punctuation(text: str) -> str:
-    """Adjust all punctuation signs according to the norms.
-
-    Args:
-        text: str
-
-    Returs: str
-    """
+    """Adjust all punctuation signs according to the norms."""
     # Dots
     text = re.sub(r"\s*\.", ".", text)
     # Commas
@@ -88,25 +62,13 @@ def _fix_punctuation(text: str) -> str:
 
 
 def _sub_custom_n(text: str) -> str:
-    r"""Substitute escaped \\n with new line character.
-
-    Args:
-        text: str
-
-    Returs: str
-    """
+    r"""Substitute escaped \\n with new line character."""
     text = re.sub(r"\\n", "\n", text)
     return text
 
 
 def clean(text: str) -> str:
-    """Clean LLM generated text.
-
-    Args:
-        text: str
-
-    Returs: str
-    """
+    """Clean LLM generated text."""
     text = _strip_verbalized_eos(text)
     text = _strip_extra_names(text)
     text = _strip_incomplete_sentences(text)

@@ -1,18 +1,19 @@
 services:
   tg-handler:
-    image: veotri/tg-handler:v0.5.0
+    image: veotri/tg-handler:v0.5.1
     build:
       context: .
       dockerfile: tg-handler/Dockerfile
     volumes:
       - /etc/tg-llm-multibot/confs:/app/confs:ro
+      - /etc/tg-llm-multibot/history:/app/history
     networks:
       - llm-network
     depends_on:
       - llm-server
 
   llm-server:
-    image: veotri/llm-server:v0.5.0
+    image: veotri/llm-server:v0.5.1
     build:
       context: .
       dockerfile: llm-server/Dockerfile
