@@ -2,36 +2,47 @@ package initconf
 
 import (
 	"encoding/json"
-	"log"
+	"fmt"
 	"os"
+	"time"
 )
 
-// Path, structure and loader for Initial Config
-const InitConf = "./confs/init.json"
-
-type InitJSON struct {
-	KeysAPI     []string            `json:"keysAPI"`
-	Admins      []string            `json:"admins"`
-	Orders      map[string][]string `json:"orders"`
-	ConfigPath  string              `json:"config_path"`
-	HistoryPath string              `json:"history_path"`
-	MemoryLimit int                 `json:"memory_limit"`
+type InitConf struct {
+	KeysAPI      []string            `json:"keysAPI"`
+	Admins       []string            `json:"admins"`
+	Orders       map[string][]string `json:"orders"`
+	ConfigPath   string              `json:"config_path"`
+	HistoryPath  string              `json:"history_path"`
+	MemoryConfig MemoryConfig        `json:"memory_config"`
+	Prompts      Prompts             `json:"prompts"`
+	CandidateNum int                 `json:"candidate_num"`
 }
 
-func Load(config string) *InitJSON {
-	var initJSON InitJSON
+type MemoryConfig struct {
+	Limit           int           `json:"limit"`
+	MessageTTL      time.Duration `json:"msg_ttl"`
+	CleanupInterval time.Duration `json:"cleanup_interval"`
+}
+
+type Prompts struct {
+	ResponsePrompt string `json:"response"`
+	SelectPrompt   string `json:"select"`
+}
+
+func Load(confPath string) (*InitConf, error) {
+	var initConf InitConf
 
 	// Read JSON data from file
-	data, err := os.ReadFile(config)
+	data, err := os.ReadFile(confPath)
 	if err != nil {
-		log.Fatalf("Failed to read %s: %v", InitConf, err)
+		return nil, fmt.Errorf("Failed to read %s: %w", confPath, err)
 	}
 
-	// Decode JSON data to InitJSON
-	err = json.Unmarshal(data, &initJSON)
+	// Decode JSON data to InitConf
+	err = json.Unmarshal(data, &initConf)
 	if err != nil {
-		log.Fatalf("Failed to unmarshal %s: %v", InitConf, err)
+		return nil, fmt.Errorf("Failed to unmarshal %s: %w", confPath, err)
 	}
 
-	return &initJSON
+	return &initConf, nil
 }

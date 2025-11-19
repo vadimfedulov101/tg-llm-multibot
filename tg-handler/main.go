@@ -7,18 +7,13 @@ import (
 	"os/signal"
 	"sync"
 	"syscall"
-	"time"
 
 	"tg-handler/bot"
 	"tg-handler/initconf"
 	"tg-handler/memory"
 )
 
-const (
-	InitConf        = "./confs/init.json"
-	MessageTTL      = 24 * time.Hour
-	CleanupInterval = time.Hour
-)
+const InitConfPath = "./confs/init.json"
 
 func main() {
 	// Terminate on termination signal gracefully
@@ -28,26 +23,27 @@ func main() {
 	defer cancel()
 
 	// Load initialization config
-	initJSON := initconf.Load(InitConf)
+	initConf, err := initconf.Load(InitConfPath)
+	if err != nil {
+		log.Fatalf("Failed to load init config: %v", err)
+	}
 
-	// Get KeysAPI and HistoryPath
-	KeysAPI := initJSON.KeysAPI
-	HistoryPath := initJSON.HistoryPath
-
-	// Make safe history
-	h := memory.LoadHistory(HistoryPath)
+	// Get safe history and cleaner running
+	HistoryPath := initConf.HistoryPath
+	h, err := memory.LoadHistory(HistoryPath)
+	if err != nil {
+		log.Fatalf("Failed to load history: %v", err)
+	}
 	sh := memory.NewSafeHistory(h)
+	go memory.Cleaner(ctx, sh, HistoryPath, &initConf.MemoryConfig)
 
-	// Start cleaner for common history
-	go bot.Cleaner(ctx, sh, HistoryPath, CleanupInterval, MessageTTL)
-
-	// Start all bots with shared history and mutex
+	// Start all bots with shared history
 	var wg sync.WaitGroup
-	for id := range KeysAPI {
+	for id := range initConf.KeysAPI {
 		wg.Add(1)
 		go func(botId int) {
 			defer wg.Done()
-			bot.StartWithCtx(ctx, botId, initJSON, sh)
+			bot.StartWithCtx(ctx, botId, initConf, sh)
 		}(id)
 	}
 

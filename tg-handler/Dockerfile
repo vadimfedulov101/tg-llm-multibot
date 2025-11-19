@@ -14,9 +14,10 @@ RUN go mod download
 
 COPY ./tg-handler .
 
-RUN apk update --no-cache && apk add --no-cache upx
-
-RUN go build -ldflags="-s -w" main.go && upx --best --lzma main
+# Compression (uncomment lines around build to enable)
+# RUN apk update --no-cache && apk add --no-cache upx
+RUN go build -ldflags="-s -w" main.go
+# upx --best --lzma main
 
 # Stage 2: Create a lightweight image
 FROM alpine

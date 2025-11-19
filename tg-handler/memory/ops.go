@@ -6,37 +6,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"time"
 )
-
-// Load history as shared once (no concurrency)
-func LoadHistory(source string) History {
-	var history History
-
-	// Open file (created if needed)
-	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		log.Fatalf("[OS error] Failed to open history file: %v", err)
-	}
-	defer file.Close()
-
-	// Read JSON data from file
-	data, err := io.ReadAll(file)
-	if err != nil {
-		log.Fatalf("[OS error] Failed to read history file: %v", err)
-	}
-
-	// Decode JSON data to history
-	err = json.Unmarshal(data, &history)
-	if err != nil {
-		history = make(History)
-		log.Println("[OS] History created")
-	} else {
-		log.Println("[OS] History loaded")
-	}
-
-	return history
-}
 
 // Reconstructs short/long memory from context/reply chain
 func GetMemory(sh *SafeChatHistory, lines [2]string, memoryLimit int) *Memory {
@@ -46,72 +16,37 @@ func GetMemory(sh *SafeChatHistory, lines [2]string, memoryLimit int) *Memory {
 	}
 }
 
-// Cleans file history (clean local and save as file)
-func CleanFileHistory(sh *SafeHistory, dest string, messageTTL time.Duration) {
-	cleanHistory(sh, messageTTL)
-	if err := SaveHistory(dest, sh); err != nil {
-		log.Printf("Failed to save history: %v", err)
+// Load history as shared once (non-concurrent)
+func LoadHistory(source string) (*History, error) {
+	// start with empty history
+	history := make(History)
+
+	// Open file (created if needed)
+	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		return &history, fmt.Errorf("Failed to open history file: %w", err)
 	}
-}
+	defer file.Close()
 
-// Cleans all lines older than day in every chat history
-func cleanHistory(sh *SafeHistory, messageTTL time.Duration) {
-	// Get all bot names
-	sh.mu.RLock()
-	botNames := make([]string, 0, len(sh.History))
-	for botName := range sh.History {
-		botNames = append(botNames, botName)
+	// Read JSON data from file
+	data, err := io.ReadAll(file)
+	if err != nil {
+		return &history, fmt.Errorf("Failed to read history file: %w", err)
 	}
-	sh.mu.RUnlock()
 
-	currentTime := time.Now()
-
-	// Clean each bot independently
-	for _, botName := range botNames {
-		safeBotHistory := sh.Get(botName)
-		if safeBotHistory != nil {
-			cleanBotHistory(safeBotHistory, currentTime, messageTTL)
+	// Try to unmarshal if we have data
+	if len(data) > 0 {
+		// Keep the empty history on fail
+		if err := json.Unmarshal(data, &history); err != nil {
+			log.Printf("Failed to unmarshal history, using empty: %v", err)
+		} else {
+			log.Println("History loaded")
 		}
-	}
-}
-
-func cleanBotHistory(sbh *SafeBotHistory, currentTime time.Time, messageTTL time.Duration) {
-	// Ensure secure access
-	sbh.mu.RLock()
-	CIDs := make([]int64, 0, len(sbh.History))
-	for CID := range sbh.History {
-		CIDs = append(CIDs, CID)
-	}
-	sbh.mu.RUnlock()
-
-	for _, CID := range CIDs {
-		safeChatHistory := sbh.Get(CID)
-		cleanChatHistory(safeChatHistory, currentTime, messageTTL)
-
-	}
-}
-
-func cleanChatHistory(sch *SafeChatHistory, currentTime time.Time, messageTTL time.Duration) {
-	// Ensure secure access
-	sch.mu.Lock()
-	defer sch.mu.Unlock()
-
-	// Clean up context
-	// Create a new slice pointing to the original slice
-	filteredContext := sch.History.ChatContext[:0]
-	// Range over the original slice reusing its memory for a new slice
-	for _, messageEntry := range sch.History.ChatContext {
-		if currentTime.Sub(messageEntry.Timestamp) <= messageTTL {
-			filteredContext = append(filteredContext, messageEntry)
-		}
+	} else {
+		log.Println("History created (empty file)")
 	}
 
-	// Clean up reply chains
-	for line, messageEntry := range sch.History.ReplyChains {
-		if currentTime.Sub(messageEntry.Timestamp) > messageTTL {
-			delete(sch.History.ReplyChains, line)
-		}
-	}
+	return &history, nil
 }
 
 // Save history concurrently

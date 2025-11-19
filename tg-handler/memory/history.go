@@ -62,9 +62,9 @@ func NewMemory(r []string, c []string) *Memory {
 }
 
 // Safe history constructor for main
-func NewSafeHistory(h History) *SafeHistory {
+func NewSafeHistory(h *History) *SafeHistory {
 	return &SafeHistory{
-		History: h,
+		History: *h,
 	}
 }
 

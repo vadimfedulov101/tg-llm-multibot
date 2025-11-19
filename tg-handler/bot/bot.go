@@ -2,10 +2,9 @@ package bot
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"path/filepath"
-	"sync"
-	"time"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -16,42 +15,14 @@ import (
 	"tg-handler/messaging"
 )
 
-// Cleans bot memory with intervals according to TTL
-func Cleaner(
-	ctx context.Context,
-	sh *memory.SafeHistory,
-	historyPath string,
-	cleanupInterval time.Duration,
-	messageTTL time.Duration,
-) {
-	// Perform preemptive cleanup
-	memory.CleanFileHistory(sh, historyPath, messageTTL)
-
-	// Start a ticker
-	t := time.NewTicker(cleanupInterval)
-	defer t.Stop()
-
-	// Clean up on tick until context done
-	for {
-		select {
-		case <-t.C:
-			memory.CleanFileHistory(sh, historyPath, messageTTL)
-		case <-ctx.Done():
-			log.Println("Cleaner performing shutdown on signal.")
-			return
-		}
-	}
-
-}
-
 func StartWithCtx(
 	ctx context.Context,
 	id int,
-	initJSON *initconf.InitJSON,
+	initConf *initconf.InitConf,
 	sh *memory.SafeHistory,
 ) {
 	// Authorize a bot via keyAPI
-	bot, err := tg.NewBotAPI(initJSON.KeysAPI[id])
+	bot, err := tg.NewBotAPI(initConf.KeysAPI[id])
 	if err != nil {
 		panic(err)
 	}
@@ -61,37 +32,30 @@ func StartWithCtx(
 
 	// Get bot history and config (order postfix added by OrderInfo)
 	sbh := sh.Get(botName)
-	botConf := filepath.Join(initJSON.ConfigPath, botName+"%s.json")
+	botConf := filepath.Join(initConf.ConfigPath, botName+"%s.json")
 
 	// Prepare update channel
 	u := tg.NewUpdate(0)
 	u.Timeout = 30
 	updates := bot.GetUpdatesChan(u)
 
-	var wg sync.WaitGroup
 	for {
 		select {
 		case update, ok := <-updates:
 			if !ok { // If chanel closed await handlers finish before return
 				log.Printf("Bot %s update channel closing", botName)
-				wg.Wait()
-				memory.SaveHistory(initJSON.HistoryPath, sh)
+				memory.SaveHistory(initConf.HistoryPath, sh)
 				log.Printf("Bot %s update channel closed", botName)
 				return
 			}
 			// Start handler as awaitable goroutine
-			wg.Add(1)
 			go func(u tgbotapi.Update) {
-				defer wg.Done()
-				handleUpdate(ctx, u, initJSON, bot, botName, sbh, botConf)
+				handleUpdate(ctx, u, initConf, bot, botName, sbh, botConf)
+				memory.SaveHistory(initConf.HistoryPath, sh)
 			}(update)
-			// Await handlers finish and save history
-			wg.Wait()
-			memory.SaveHistory(initJSON.HistoryPath, sh)
 		case <-ctx.Done(): // If context done await handlers finish before return
 			log.Printf("Bot %s received shutdown signal", botName)
-			wg.Wait()
-			memory.SaveHistory(initJSON.HistoryPath, sh)
+			memory.SaveHistory(initConf.HistoryPath, sh)
 			log.Printf("Bot %s shut down gracefully", botName)
 			return
 		}
@@ -102,7 +66,7 @@ func StartWithCtx(
 func handleUpdate(
 	ctx context.Context,
 	update tgbotapi.Update,
-	initJSON *initconf.InitJSON,
+	initConf *initconf.InitConf,
 	bot *tgbotapi.BotAPI,
 	botName string,
 	safeBotHistory *memory.SafeBotHistory,
@@ -119,17 +83,17 @@ func handleUpdate(
 
 	// Classify message: to bot or not (get order info)
 	orderInfo := messaging.NewOrderInfo(
-		messageInfo, botConfig, initJSON.Orders[botName],
+		messageInfo, botConfig, initConf.Orders[botName],
 	)
-	isAsked := messaging.IsAsked(orderInfo, initJSON.Admins)
+	isAsked := messaging.IsAsked(orderInfo, initConf.Admins)
 
 	// Sum up info
-	chatInfo := messaging.NewChatInfo(orderInfo, initJSON.MemoryLimit)
+	chatInfo := messaging.NewChatInfo(orderInfo, initConf.MemoryConfig.Limit)
 	safeChatHistory := safeBotHistory.Get(chatInfo.CID)
 
 	// Record message
 	memory.AddToChatContext(
-		safeChatHistory, messageInfo, initJSON.MemoryLimit,
+		safeChatHistory, messageInfo, initConf.MemoryConfig.Limit,
 	)
 
 	// Gate keep
@@ -138,15 +102,22 @@ func handleUpdate(
 	}
 	log.Printf("%s got message", botName)
 
-	// Respond
-	respond(ctx, chatInfo, safeChatHistory)
+	// Respond and fail fatally if could not do that
+	err := respond(
+		ctx, chatInfo, safeChatHistory, &initConf.Prompts, initConf.CandidateNum,
+	)
+	if err != nil {
+		log.Fatalf("%v", err)
+	}
 }
 
 func respond(
 	ctx context.Context,
 	chat *messaging.ChatInfo,
 	sh *memory.SafeChatHistory,
-) {
+	prompts *initconf.Prompts,
+	candidateNum int,
+) error {
 	// Type until reply
 	typingCtx, cancel := context.WithCancel(ctx)
 	go messaging.Typing(typingCtx, chat)
@@ -159,19 +130,22 @@ func respond(
 	// Reconstruct short/long memory from context/reply chain
 	botMemory := memory.GetMemory(sh, lines, chat.MemoryLimit)
 
-	// Send to API
-	text, err := api.Send(ctx, botMemory, chat.Config, chat.ChatTitle)
+	// Generate response
+	text, err := api.Generate(
+		ctx, chat.Config, chat.ChatTitle, botMemory, prompts, candidateNum,
+	)
 	if err != nil {
-		log.Printf("API error in chat %s.", chat.ChatTitle)
-		return
+		return fmt.Errorf("Failed to respond in chat %s: %w", chat.ChatTitle, err)
 	}
 
-	// Reply
+	// Reply with response
 	reply := messaging.Reply(chat, text)
 
-	// Record response and preformatted message
+	// Record reply and preformatted message
 	resp := messaging.NewMessageInfo(chat.Bot, reply)
 	memory.AddToReplyChainReuse(sh, resp, lines[0])
+
+	return nil
 }
 
 // Validates message based on its info
