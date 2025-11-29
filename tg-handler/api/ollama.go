@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,8 +12,8 @@ import (
 	"time"
 )
 
-// Ollama types
-type OllamaRequest struct {
+// Request to Ollama API
+type Request struct {
 	Model        string  `json:"model"`
 	Prompt       string  `json:"prompt"`
 	Stream       bool    `json:"stream"`
@@ -21,7 +22,18 @@ type OllamaRequest struct {
 	Context      []int   `json:"context,omitempty"`
 }
 
-type OllamaResponse struct {
+func newRequest(prompt string, settings *Settings) *Request {
+	return &Request{
+		Model:        model,
+		Prompt:       prompt,
+		Stream:       false,
+		SystemPrompt: settings.BotConf.SystemPrompt,
+		Options:      settings.Options,
+	}
+}
+
+// Response from Ollama API
+type Response struct {
 	Model              string `json:"model"`
 	CreatedAt          string `json:"created_at"`
 	Response           string `json:"response"`
@@ -35,75 +47,74 @@ type OllamaResponse struct {
 	EvalDuration       int64  `json:"eval_duration,omitempty"`
 }
 
-// Create Ollama request
-func newOllamaRequest(prompt string, settings *Settings) *OllamaRequest {
-	return &OllamaRequest{
-		Model:        OLLAMA_MODEL,
-		Prompt:       prompt,
-		Stream:       false,
-		SystemPrompt: settings.SystemPrompt,
-		Options:      settings.Options,
-	}
-}
+// API errors
+var (
+	ErrMarshalFailed     = errors.New("[api] marshal request failed")
+	ErrRequestFailed     = errors.New("[api] create request failed")
+	ErrSendFailed        = errors.New("[api] send request failed")
+	ErrInvalidStatus     = errors.New("[api] invalid status code")
+	ErrDecodeFailed      = errors.New("[api] decode response failed")
+	ErrRequestIncomplete = errors.New("[api] request not completed")
+)
 
-// Exhaustively sends request to API
-func sendRequestExhaustive(
+// Eternally sends request to API and logs error
+func sendRequestEternal(
 	ctx context.Context,
-	request *OllamaRequest,
-) (string, error) {
-	var text string
+	request *Request,
+) (text string) {
 	var err error
-	for i := range MAX_SEND_TRY {
+	for {
 		text, err = sendRequest(ctx, request)
 		if err == nil {
 			break
 		}
-		log.Printf("Failed send try %d: %v", i, err)
-		time.Sleep(RETRY_TIME * time.Duration(1<<(i+1)))
+		log.Printf("Failed send: %v\n", err)
+		time.Sleep(retryTime)
 	}
 
-	return text, err
+	return text
 }
 
-// Send Ollama request
-func sendRequest(ctx context.Context, request *OllamaRequest) (string, error) {
+// Sends Ollama request
+func sendRequest(ctx context.Context, request *Request) (string, error) {
 	// Encode request body to JSON data
 	jsonData, err := json.Marshal(request)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", ErrMarshalFailed, err)
 	}
 
-	// Make new POST request with JSON data
-	req, err := http.NewRequestWithContext(ctx, "POST", OLLAMA_API, bytes.NewBuffer(jsonData))
+	// Make POST request with JSON data
+	req, err := http.NewRequestWithContext(ctx, "POST", apiUrl, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", fmt.Errorf("Failed to make request: %w", err)
+		return "", fmt.Errorf("%w: %v", ErrRequestFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	// Set HTTP client
-	client := &http.Client{Timeout: API_TIMEOUT}
+	client := &http.Client{Timeout: waitTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("Failed to send request: %w", err)
+		return "", fmt.Errorf("%w: %v", ErrSendFailed, err)
 	}
 	defer resp.Body.Close()
 
-	// Check status; print status code of error if any
+	// Validate status code
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("Status %d: %s", resp.StatusCode, string(body))
+		return "", fmt.Errorf("%w %d: %s", ErrInvalidStatus, resp.StatusCode, string(body))
 	}
 
 	// Decode response body
-	var ollamaResp OllamaResponse
-	err = json.NewDecoder(resp.Body).Decode(&ollamaResp)
+	var response Response
+	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("%w: %v", ErrDecodeFailed, err)
 	}
 
-	if !ollamaResp.Done {
-		return "", fmt.Errorf("Failed to await request completion")
+	// Validate request completeness
+	if !response.Done {
+		return "", ErrRequestIncomplete
 	}
 
-	return ollamaResp.Response, nil
+	return response.Response, nil
 }

@@ -1,19 +1,24 @@
 {
-	"keysAPI": [
-		"KEY_EXAMPLE"
-	],
-	"admins": ["veotri"],
-	"orders": {},
-	"config_path": "./confs/bots",
-	"history_path": "./history/history.json",
-	"memory_config": {
-		"limit": 25,
-		"msg_ttl": 43200000000000,
-		"cleanup_interval": 3600000000000
+	"bots_conf": {
+		"keysAPI": [
+			"keyAPI"
+		],
+		"admins": ["admin"],
+		"cids": []
 	},
-	"prompts": {
-		"response": "Respondu en la interparolo laŭ karaktero. Ĉiam konsideri la kuntekston. Parolu nur por vi mem. Evitu ripetojn, demandojn kaj pardonpetojn. Ne uzu listojn: nombrajn kaj simbolajn. Traktu '\\n' kiel novlinian markilon:\n\nKunteksto:\n{}\n\nInterparolo:\n{}\n%s: ",
-		"select": "Select the most authentic response according to your character. Prefer complete, coherent, styled responses. Avoid general, informative, artificial ones. Respond only with a number without extra text.\n\nContext:\n{}\n\nConversation:\n{}\n\nResponses:\n{}\n\nBest candidate: "
+	"generate_conf": {
+		"prompts": {
+			"response": "Answer as the character. Never forget your role. Always consider chat context and reply chain before reply. Avoid extensive repetitions, questions and apologizing. Treat '\\n' as new line symbol:\n\nChat Context (last messages):\n%s\n\nReply Chain (previous messages):\n%s\n\n%s: ",
+			"select": "Select the most authentic response according to your character. Prefer complete, coherent and styled responses. Avoid general, informative and artificial ones. Respond only with a number without extra text.\n\nChat Context (last messages):\n%s\n\nReply Chain (previous messages):\n%s\n\nResponses:\n%s\n\nBest candidate (1-%d): "
+		},
+		"memory_limit": 100
 	},
-	"candidate_num": 5
+	"paths_conf": {
+		"bots": "./confs/bots",
+		"history": "./history/history.json"
+	},
+	"cleaner_conf": {
+		"msg_ttl": "12h",
+		"cleanup_interval": "1h"
+	}
 }

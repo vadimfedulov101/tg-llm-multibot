@@ -3,17 +3,19 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
+	"log"
 	"os"
-	"strings"
+
+	"tg-handler/conf"
 )
 
-// Config JSON representation
+// Settings for LLM inference
 type Settings struct {
-	SystemPrompt string  `json:"system_prompt"`
-	Options      Options `json:"options"`
+	BotConf conf.BotConf `json:"bot_conf"`
+	Options Options      `json:"options"`
 }
 
+// Options for LLM
 type Options struct {
 	Temperature   float32 `json:"temperature,omitempty"`
 	RepeatPenalty float32 `json:"repeat_penalty,omitempty"`
@@ -23,40 +25,31 @@ type Options struct {
 	Seed          int     `json:"seed,omitempty"`
 }
 
-// Loads settings
-func loadSettings(conf string, chatTitle string) (*Settings, error) {
+// Settings errors
+var (
+	ErrReadFailed      = errors.New("[api] read settings failed")
+	ErrUnmarshalFailed = errors.New("[api] unmarshal settings failed")
+)
+
+// Loads settings or panics
+func mustLoadSettings(confPath string) *Settings {
 	var settings Settings
 
 	// Read JSON data from file
-	data, err := os.ReadFile(conf)
+	data, err := os.ReadFile(confPath)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to read settings file: %w", err)
+		log.Panicf("%v: %v", ErrReadFailed, err)
 	}
 
 	// Decode JSON data to settings
 	err = json.Unmarshal(data, &settings)
 	if err != nil {
-		return nil, fmt.Errorf("Failed to unmarshal settings: %w", err)
+		log.Panicf("%v: %v", ErrUnmarshalFailed, err)
 	}
 
-	// Format system prompt with chat title
-	settings.SystemPrompt, err = fmtSystemPrompt(settings.SystemPrompt, chatTitle)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to format system prompt: %w", err)
-	}
+	// Validate system prompt
+	systemPrompt := settings.BotConf.SystemPrompt
+	conf.MustValidateSystemPrompt(systemPrompt)
 
-	return &settings, nil
-}
-
-// Formats system prompt with chat title
-func fmtSystemPrompt(systemPrompt string, chatTitle string) (string, error) {
-	sNum := strings.Count(systemPrompt, "%s")
-	if sNum < 1 {
-		return "", errors.New("Less than one %%s (chat title) in system prompt")
-	}
-	if sNum > 1 {
-		return "", errors.New("More than one %%s (chat title) in system prompt")
-	}
-
-	return fmt.Sprintf(systemPrompt, chatTitle), nil
+	return &settings
 }

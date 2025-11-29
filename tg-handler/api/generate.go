@@ -2,132 +2,141 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"math/rand/v2"
 	"strconv"
 	"time"
 
-	"tg-handler/initconf"
-	"tg-handler/memory"
+	"tg-handler/conf"
+	"tg-handler/history"
 )
 
 // Ollama constants
 const (
-	OLLAMA_MODEL   = "huihui_ai/qwen3-abliterated:14b-q8_0"
-	OLLAMA_API     = "http://ollama:11434/api/generate"
-	MAX_SEND_TRY   = 3
-	MAX_SELECT_TRY = 10
-	RETRY_TIME     = 5 * time.Second
-	API_TIMEOUT    = 10 * time.Minute
+	model        = "huihui_ai/qwen3-abliterated:14b-q8_0"
+	apiUrl       = "http://ollama:11434/api/generate"
+	maxSelectTry = 10
+	retryTime    = time.Minute
+	waitTimeout  = 10 * time.Minute
+)
+
+// Generation errors
+var (
+	// General error
+	ErrSelect = errors.New("[api] selection failed")
+	// Specific errors to be wrapped
+	ErrIdxNaN         = errors.New("candidate index is not a number")
+	ErrIdxOutOfBounds = errors.New("candidate index is out of bounds")
 )
 
 // Generates response
 func Generate(
 	ctx context.Context,
-	conf string,
+	memory *history.Memory,
+	confPath string,
+	prompts *conf.Prompts,
+	botName string,
 	chatTitle string,
-	mem *memory.Memory,
-	prompts *initconf.Prompts,
-	candidateNum int,
-) (string, error) {
-	// Load settings from config (with chat title in system prompt)
-	settings, err := loadSettings(conf, chatTitle)
-	if err != nil {
-		return "", fmt.Errorf("Failed to load settings: %w", err)
-	}
+) string {
+	// Load settings from config (chat title in system prompt)
+	settings := mustLoadSettings(confPath)
+	settings.BotConf.SystemPrompt = fmtSystemPrompt(
+		settings.BotConf.SystemPrompt, chatTitle,
+	)
 
 	// Generate candidates
-	candidates, err := generateCandidates(
-		ctx, settings, mem, prompts, candidateNum,
-	)
-	if err != nil {
-		return "", fmt.Errorf("Failed to generate candidates: %w", err)
+	candidates := generateCandidates(ctx, settings, memory, prompts, botName)
+	if settings.BotConf.CandidateNum == 1 {
+		return candidates[0]
 	}
 
 	// Select best candidate
-	candidateIdx, err := selectBestCandidate(
-		ctx, settings, mem, prompts, candidates,
+	candidateIdx := selectBestCandidate(
+		ctx, settings, memory, prompts, candidates,
 	)
-	if err != nil {
-		return "", fmt.Errorf("Failed to select candidate: %w", err)
-	}
 
-	// Return best candidate
-	return candidates[candidateIdx], nil
+	return candidates[candidateIdx]
 }
 
 // Generates <candidateNum> candidates
 func generateCandidates(
 	ctx context.Context,
 	settings *Settings,
-	mem *memory.Memory,
-	prompts *initconf.Prompts,
-	candidateNum int,
-) ([]string, error) {
+	memory *history.Memory,
+	prompts *conf.Prompts,
+	botName string,
+) []string {
+	// Load candidate num
+	candidateNum := settings.BotConf.CandidateNum
+
 	// Initialize candidates
 	candidates := make([]string, 0, candidateNum)
 
 	// Create request
-	prompt := fmtMemory(prompts.ResponsePrompt, mem)
-	request := newOllamaRequest(prompt, settings)
+	prompt := fmtResponsePrompt(prompts.Response, memory, botName)
+	request := newRequest(prompt, settings)
 
 	// Generate selection candidates
 	for i := range candidateNum {
-		// Send request
-		candidate, err := sendRequestExhaustive(ctx, request)
-		if err != nil {
-			return candidates, fmt.Errorf(
-				"All %d send tries exhausted. Last error: %w", MAX_SEND_TRY, err,
-			)
+		// Get new candidate via request
+		candidate := sendRequestEternal(ctx, request)
 
-		}
-		candidate = trimThinkingTags(candidate)
-		candidates = append(candidates, candidate)
-		log.Printf("Candidate %d: %s", i+1, candidate)
+		// Add new candidate
+		candidates = append(candidates, trimNoise(candidate))
+
+		log.Printf("[api] candidate %d: %s", i+1, candidate)
 	}
 
-	return candidates, nil
+	return candidates
 }
 
-// Selects the best candidate from <candidateNum> candidates
+// Selects the best candidate from <len(candidates)> candidates
 func selectBestCandidate(
 	ctx context.Context,
 	settings *Settings,
-	mem *memory.Memory,
-	prompts *initconf.Prompts,
+	memory *history.Memory,
+	prompts *conf.Prompts,
 	candidates []string,
-) (candidateIdx int, err error) {
+) (candidateIdx int) {
+	// Load candidate num
+	candidateNum := settings.BotConf.CandidateNum
+
 	// Create request
-	prompt := fmtCandidates(fmtMemory(prompts.SelectPrompt, mem), candidates)
-	request := newOllamaRequest(prompt, settings)
+	prompt := fmtSelectPrompt(prompts.Select, memory, candidates, candidateNum)
+	request := newRequest(prompt, settings)
 
-	// Generate selection index
-	for i := range MAX_SELECT_TRY {
+	// Try to generate selection index
+	var err error
+	for i := range maxSelectTry {
+		// Log previous try error
+		if i > 0 {
+			log.Printf("Select try %d: %v", i+1, err)
+		}
+
 		// Send request
-		text, err := sendRequestExhaustive(ctx, request)
+		selectText := sendRequestEternal(ctx, request)
+
+		// Get selection number
+		selectNum, err := strconv.Atoi(trimNoise(selectText))
 		if err != nil {
-			return 0, fmt.Errorf(
-				"All %d send tries exhausted. Last error: %w", MAX_SEND_TRY, err,
-			)
+			err = fmt.Errorf("%w: %v", ErrIdxNaN, err)
+			continue // Fail
 		}
 
-		// Try to convert text
-		candidateSelection, err := strconv.Atoi(trimThinkingTags(text))
-		candidateIdx := candidateSelection - 1
-		isIdxValid := candidateIdx > 0 && candidateIdx < len(candidates)
-		if err == nil && isIdxValid { // Exit on success: got valid idx in bounds
-			break
+		// Validate index
+		candidateIdx := selectNum - 1
+		if candidateIdx > 0 && candidateIdx < len(candidates) {
+			return candidateIdx // Success
 		}
-		// Log specific error
-		if !isIdxValid {
-			err = fmt.Errorf(
-				"Candidate index %d is out of bounds (0-%d): %s",
-				candidateIdx, len(candidates), text)
-		} else {
-			err = fmt.Errorf("Candidate index is NaN: %w", err)
-		}
-		log.Printf("Select try %d: %v", i+1, err)
+		err = fmt.Errorf("%w: %d not in (0-%d)",
+			ErrIdxOutOfBounds, candidateIdx, len(candidates),
+		)
 	}
 
-	return candidateIdx, nil
+	// Select random candidate index (as generation failed)
+	candidateIdx = rand.IntN(len(candidates))
+
+	return candidateIdx
 }
