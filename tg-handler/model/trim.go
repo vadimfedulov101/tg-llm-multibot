@@ -1,8 +1,22 @@
-package api
+package model
 
 import (
 	"strings"
 )
+
+// Cuts hash tags to limit
+func cutHashTags(note string, limit int) string {
+	// Get hashtags slice
+	hashtags := strings.Fields(note)
+
+	// Cut hashtags slice if longer than limit
+	if len(hashtags) > limit {
+		hashtags = hashtags[:limit]
+	}
+
+	// Return joined hashtags string
+	return strings.Join(hashtags, " ")
+}
 
 // Removes noise
 func trimNoise(s string) string {

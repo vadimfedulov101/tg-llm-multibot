@@ -1,4 +1,4 @@
-package api
+package model
 
 import (
 	"bytes"
@@ -10,25 +10,27 @@ import (
 	"log"
 	"net/http"
 	"time"
+
+	"tg-handler/conf"
 )
 
 // Request to Ollama API
 type Request struct {
-	Model        string  `json:"model"`
-	Prompt       string  `json:"prompt"`
-	Stream       bool    `json:"stream"`
-	Options      Options `json:"options"`
-	SystemPrompt string  `json:"system,omitempty"`
-	Context      []int   `json:"context,omitempty"`
+	Model        string                `json:"model"`
+	Prompt       string                `json:"prompt"`
+	Stream       bool                  `json:"stream"`
+	Options      conf.OptionalSettings `json:"options"`
+	SystemPrompt string                `json:"system,omitempty"`
+	Context      []int                 `json:"context,omitempty"`
 }
 
-func newRequest(prompt string, settings *Settings) *Request {
+func newRequest(prompt string, botConf *conf.BotConf) *Request {
 	return &Request{
-		Model:        model,
+		Model:        model, // predefined constant
 		Prompt:       prompt,
 		Stream:       false,
-		SystemPrompt: settings.BotConf.SystemPrompt,
-		Options:      settings.Options,
+		SystemPrompt: botConf.Main.Role,
+		Options:      botConf.Optional,
 	}
 }
 
@@ -58,21 +60,18 @@ var (
 )
 
 // Eternally sends request to API and logs error
-func sendRequestEternal(
-	ctx context.Context,
-	request *Request,
-) (text string) {
+func sendRequestEternal(ctx context.Context, request *Request) (text string) {
 	var err error
 	for {
 		text, err = sendRequest(ctx, request)
 		if err == nil {
 			break
 		}
-		log.Printf("Failed send: %v\n", err)
+		log.Printf("Failed send: %v", err)
 		time.Sleep(retryTime)
 	}
 
-	return text
+	return trimNoise(text)
 }
 
 // Sends Ollama request
@@ -84,7 +83,9 @@ func sendRequest(ctx context.Context, request *Request) (string, error) {
 	}
 
 	// Make POST request with JSON data
-	req, err := http.NewRequestWithContext(ctx, "POST", apiUrl, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(
+		ctx, "POST", apiUrl, bytes.NewBuffer(jsonData),
+	)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", ErrRequestFailed, err)
 	}
@@ -101,7 +102,9 @@ func sendRequest(ctx context.Context, request *Request) (string, error) {
 	// Validate status code
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("%w %d: %s", ErrInvalidStatus, resp.StatusCode, string(body))
+		return "", fmt.Errorf(
+			"%w %d: %s", ErrInvalidStatus, resp.StatusCode, string(body),
+		)
 	}
 
 	// Decode response body

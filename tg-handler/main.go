@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"tg-handler/bot"
@@ -25,24 +26,64 @@ func main() {
 	iConf := conf.MustLoadInitConf(InitConfPath)
 
 	// Get safe history
-	h := history.MustLoadHistory(iConf.PathsConf.History)
+	h := history.MustLoadHistory(iConf.Paths.History)
 	sh := history.NewSafeHistory(h)
 
 	// Start cleaner and bots
-	go history.Cleaner(ctx, iConf.PathsConf.History, sh, &iConf.CleanerConf)
-	wg := bot.StartBots(ctx, iConf, sh)
+	wg, historyUpdSignalCh := startBots(ctx, iConf, sh)
 
 	// Await termination signal
 	<-ctx.Done()
 	log.Println("Shutting down...")
 
 	// Await bots shutdown
-	log.Println("Waiting for bots to shutdown...")
+	log.Println("Waiting for bot services to shutdown...")
 	wg.Wait()
-	log.Println("All bots shutdown gracefully")
+	close(historyUpdSignalCh)
+	log.Println("All bot services shutdown gracefully")
 
-	// Save history
-	log.Println("Saving history...")
-	sh.Save(iConf.PathsConf.History)
-	log.Println("History saved")
+	// Save history (maybe no need in final save?)
+	// log.Println("Saving history...")
+	// sh.Save(iConf.Paths.History)
+	// log.Println("History saved")
+}
+
+// Starts bots with API keys
+func startBots(
+	ctx context.Context,
+	iConf *conf.InitConf,
+	sh *history.SafeHistory,
+) (*sync.WaitGroup, chan any) {
+	var (
+		wg                 sync.WaitGroup
+		historyUpdSignalCh = make(chan any)
+
+		historyPath = iConf.Paths.History
+	)
+
+	// Start cleaner
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sh.Cleaner(ctx, historyPath, &iConf.CleanerIntervals)
+	}()
+
+	// Start all bots
+	for _, keyAPI := range iConf.KeysAPI {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bot := bot.New(keyAPI, iConf, sh, historyUpdSignalCh)
+			bot.Start(ctx)
+		}()
+	}
+
+	// Start history saver
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sh.Saver(ctx, historyPath, historyUpdSignalCh)
+	}()
+
+	return &wg, historyUpdSignalCh
 }

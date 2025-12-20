@@ -22,7 +22,7 @@ var (
 
 // Sends typing signal until context done
 func Type(ctx context.Context, bot *tg.BotAPI, c *ChatInfo) {
-	cid := c.CID
+	cid := c.ID
 
 	// Type right away
 	sendSignal(bot, cid, signal)
