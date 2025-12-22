@@ -7,20 +7,20 @@ import (
 
 // Saves safe history on each update signal
 func (safeHistory *SafeHistory) Saver(
-	ctx context.Context, historyPath string, updateSignalCh <-chan any,
+	ctx context.Context, path string, updateCh <-chan any,
 ) {
-	// Save on update signal until context done
-	defer log.Println("Saver shut down gracefully.")
+	// Save history on signal until channel CLOSED or context DONE
+	defer log.Println("[history] saver shut down gracefully")
 	for {
 		select {
-		case _, ok := <-updateSignalCh:
-			if !ok {
-				log.Println("History update channel was closed.")
+		case _, ok := <-updateCh:
+			if !ok { // Check if update channel closed
+				log.Println("[history] update channel was closed")
 				return
 			}
-			safeHistory.Save(historyPath)
+			safeHistory.Save(path)
 		case <-ctx.Done():
-			log.Println("Saver received shutdown signal.")
+			log.Println("[history] saver received shutdown signal")
 			return
 		}
 	}

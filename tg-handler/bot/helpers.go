@@ -16,7 +16,7 @@ func (bot *Bot) mustReloadBotConf() {
 
 // Gets sender validator for bot
 func (bot *Bot) getSenderValidator() func(*tg.Message, string) bool {
-	admins := bot.AllowedChats.Usernames
+	admins := bot.Settings.AllowedChats.Usernames
 
 	// Identifies if private sender is admin
 	return func(msg *tg.Message, sender string) bool {
@@ -67,7 +67,7 @@ func (bot *Bot) getMentionHumanizer() func(string) string {
 
 // Gets chat validator for bot
 func (bot *Bot) getChatValidator() func(*tg.Message, int64) bool {
-	allowedCIDs := bot.AllowedChats.IDs
+	allowedCIDs := bot.Settings.AllowedChats.IDs
 
 	// Identifies if chat has allowed ID
 	return func(msg *tg.Message, cid int64) bool {

@@ -5,6 +5,11 @@ import (
 	"sync"
 )
 
+const (
+	chatQueueCap   = 256
+	replyChainsCap = 256
+)
+
 // messaging.MessageInfo abstraction
 type LineChain interface {
 	lineProvider
@@ -26,12 +31,9 @@ type SafeChatHistory struct {
 	History ChatHistory
 }
 
-func NewSafeChatHistory(
-	chatQueueSize int,
-	replyChainsSize int,
-) *SafeChatHistory {
+func NewSafeChatHistory() *SafeChatHistory {
 	return &SafeChatHistory{
-		History: *NewChatHistory(chatQueueSize, replyChainsSize),
+		History: *NewChatHistory(),
 	}
 }
 
@@ -40,13 +42,10 @@ type ChatHistory struct {
 	ReplyChains SafeReplyChains
 }
 
-func NewChatHistory(
-	chatQueueSize int,
-	replyChainsSize int,
-) *ChatHistory {
+func NewChatHistory() *ChatHistory {
 	return &ChatHistory{
-		ChatQueue:   *NewSafeChatQueue(chatQueueSize),
-		ReplyChains: *NewSafeReplyChains(replyChainsSize),
+		ChatQueue:   *NewSafeChatQueue(),
+		ReplyChains: *NewSafeReplyChains(),
 	}
 }
 
@@ -57,17 +56,17 @@ type SafeChatQueue struct {
 	ChatQueue ChatQueue
 }
 
-func NewSafeChatQueue(size int) *SafeChatQueue {
+func NewSafeChatQueue() *SafeChatQueue {
 	return &SafeChatQueue{
-		ChatQueue: *NewChatQueue(size),
+		ChatQueue: *NewChatQueue(),
 	}
 
 }
 
 type ChatQueue []MessageEntry
 
-func NewChatQueue(size int) *ChatQueue {
-	c := make(ChatQueue, 0, size)
+func NewChatQueue() *ChatQueue {
+	c := make(ChatQueue, 0, chatQueueCap)
 	return &c
 }
 
@@ -78,17 +77,17 @@ type SafeReplyChains struct {
 	ReplyChains ReplyChains
 }
 
-func NewSafeReplyChains(size int) *SafeReplyChains {
+func NewSafeReplyChains() *SafeReplyChains {
 	return &SafeReplyChains{
-		ReplyChains: *NewReplyChains(size),
+		ReplyChains: *NewReplyChains(),
 	}
 
 }
 
 type ReplyChains map[string]MessageEntry
 
-func NewReplyChains(size int) *ReplyChains {
-	r := make(ReplyChains, size)
+func NewReplyChains() *ReplyChains {
+	r := make(ReplyChains, replyChainsCap)
 	return &r
 }
 

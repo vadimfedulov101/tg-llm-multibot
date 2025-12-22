@@ -8,7 +8,7 @@ import (
 	"tg-handler/history"
 )
 
-// ChatInfo stores chat's ID, title, history, status and last message
+// ChatInfo stores all chat data info important for bot
 type ChatInfo struct {
 	ID        int64
 	Title     string
@@ -19,7 +19,7 @@ type ChatInfo struct {
 
 func NewChatInfo(
 	m *MessageInfo,
-	h *history.SafeBotHistory,
+	sbh *history.SafeBotHistory,
 	validateChat func(*tg.Message, int64) bool,
 ) *ChatInfo {
 	// Get message and sender
@@ -34,7 +34,7 @@ func NewChatInfo(
 
 	// Get chat ID and type
 	var (
-		cid       = chat.ID
+		chatID    = chat.ID
 		isPrivate = chat.IsPrivate()
 	)
 
@@ -43,13 +43,16 @@ func NewChatInfo(
 	if isVIP {
 		isAllowed = true
 	} else {
-		isAllowed = validateChat(msg, cid)
+		isAllowed = validateChat(msg, chatID)
 	}
 
+	// Get history
+	SafeChatHistory, _ := sbh.Get(chatID)
+
 	return &ChatInfo{
-		ID:        cid,
+		ID:        chatID,
 		Title:     getChatTitle(msg, sender, isPrivate),
-		History:   h.Get(cid),
+		History:   SafeChatHistory,
 		IsAllowed: isAllowed,
 		LastMsg:   m,
 	}

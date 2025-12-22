@@ -7,8 +7,8 @@ import (
 )
 
 const (
-	chatQueueCap   = 256
-	replyChainsCap = 256
+	botHistoryCap  = 256
+	botContactsCap = 256
 )
 
 // (SAFE) BOT DATA
@@ -18,9 +18,9 @@ type SafeBotData struct {
 	Data BotData
 }
 
-func NewSafeBotData(historySize int, contactsSize int) *SafeBotData {
+func NewSafeBotData() *SafeBotData {
 	return &SafeBotData{
-		Data: *NewBotData(historySize, contactsSize),
+		Data: *NewBotData(),
 	}
 }
 
@@ -29,11 +29,22 @@ type BotData struct {
 	Contacts SafeBotContacts
 }
 
-func NewBotData(historySize int, contactsSize int) *BotData {
+func NewBotData() *BotData {
 	return &BotData{
-		History:  *NewSafeBotHistory(historySize),
-		Contacts: *NewSafeBotContacts(contactsSize),
+		History:  *NewSafeBotHistory(),
+		Contacts: *NewSafeBotContacts(),
 	}
+}
+
+// SAFE BOT DATA
+
+func (sbd *SafeBotData) Get() (*SafeBotHistory, *SafeBotContacts) {
+	// Ensure secure access
+	sbd.mu.RLock()
+	defer sbd.mu.RUnlock()
+
+	data := &sbd.Data
+	return &data.History, &data.Contacts
 }
 
 // BOT HISTORY BRANCH
@@ -43,16 +54,16 @@ type SafeBotHistory struct {
 	History BotHistory
 }
 
-func NewSafeBotHistory(size int) *SafeBotHistory {
+func NewSafeBotHistory() *SafeBotHistory {
 	return &SafeBotHistory{
-		History: *NewBotHistory(size),
+		History: *NewBotHistory(),
 	}
 }
 
 type BotHistory map[int64]*SafeChatHistory
 
-func NewBotHistory(size int) *BotHistory {
-	h := make(BotHistory, size)
+func NewBotHistory() *BotHistory {
+	h := make(BotHistory, botHistoryCap)
 	return &h
 }
 
@@ -63,9 +74,9 @@ type SafeBotContacts struct {
 	Contacts BotContacts
 }
 
-func NewSafeBotContacts(size int) *SafeBotContacts {
+func NewSafeBotContacts() *SafeBotContacts {
 	return &SafeBotContacts{
-		Contacts: *NewBotContacts(size),
+		Contacts: *NewBotContacts(),
 	}
 }
 
@@ -80,8 +91,8 @@ func (sbcs *SafeBotContacts) String() string {
 
 type BotContacts map[string]BotContact
 
-func NewBotContacts(size int) *BotContacts {
-	bc := make(BotContacts, size)
+func NewBotContacts() *BotContacts {
+	bc := make(BotContacts, botContactsCap)
 	return &bc
 }
 
@@ -115,19 +126,6 @@ func (bc BotContact) String() string {
 }
 
 // METHODS
-
-// BOT DATA
-
-// Unpacks safe bot data into history and contacts
-func (sbd *SafeBotData) Unpack() (*SafeBotHistory, *SafeBotContacts) {
-	// Ensure secure access
-	sbd.mu.RLock()
-	defer sbd.mu.RUnlock()
-
-	// Get data and unpack
-	data := &sbd.Data
-	return &data.History, &data.Contacts
-}
 
 // BOT HISTORY BRANCH
 
@@ -164,7 +162,7 @@ func (sbh *SafeBotHistory) init(cid int64) *SafeChatHistory {
 	// }
 
 	// Return new chat histroy
-	chatHistory := NewSafeChatHistory(chatQueueCap, replyChainsCap)
+	chatHistory := NewSafeChatHistory()
 	sbh.History[cid] = chatHistory
 	return chatHistory
 }

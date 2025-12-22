@@ -14,7 +14,7 @@ import (
 	"tg-handler/conf"
 )
 
-// Request to Ollama API
+// Request to Ollama
 type Request struct {
 	Model        string                `json:"model"`
 	Prompt       string                `json:"prompt"`
@@ -34,7 +34,7 @@ func newRequest(prompt string, botConf *conf.BotConf) *Request {
 	}
 }
 
-// Response from Ollama API
+// Response from Ollama
 type Response struct {
 	Model              string `json:"model"`
 	CreatedAt          string `json:"created_at"`
@@ -49,14 +49,14 @@ type Response struct {
 	EvalDuration       int64  `json:"eval_duration,omitempty"`
 }
 
-// API errors
+// Ollama errors
 var (
-	ErrMarshalFailed     = errors.New("[api] marshal request failed")
-	ErrRequestFailed     = errors.New("[api] create request failed")
-	ErrSendFailed        = errors.New("[api] send request failed")
-	ErrInvalidStatus     = errors.New("[api] invalid status code")
-	ErrDecodeFailed      = errors.New("[api] decode response failed")
-	ErrRequestIncomplete = errors.New("[api] request not completed")
+	ErrMarshalFailed     = errors.New("[model] marshal request failed")
+	ErrRequestFailed     = errors.New("[model] create request failed")
+	ErrSendFailed        = errors.New("[model] send request failed")
+	ErrInvalidStatus     = errors.New("[model] invalid status code")
+	ErrDecodeFailed      = errors.New("[model] decode response failed")
+	ErrRequestIncomplete = errors.New("[model] request not completed")
 )
 
 // Eternally sends request to API and logs error

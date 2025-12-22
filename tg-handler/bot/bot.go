@@ -21,25 +21,22 @@ var (
 )
 
 type Bot struct {
-	API                *tg.BotAPI
-	ID                 int64
-	UserName           string
-	FirstName          string
-	confPath           string
-	Conf               *conf.BotConf
-	PromptTemplates    *conf.PromptTemplates
-	AllowedChats       *conf.AllowedChats
-	Contacts           *history.SafeBotContacts
-	HistoryUpdSignalCh chan<- any
-	History            *history.SafeBotHistory
-	MemoryLimits       *conf.MemoryLimits
+	API         *tg.BotAPI
+	ID          int64
+	UserName    string
+	FirstName   string
+	Conf        *conf.BotConf     // Loaded from bot config
+	Settings    *conf.BotSettings // Loaded from init config
+	UpdSignalCh chan<- any
+	History     *history.SafeBotHistory
+	Contacts    *history.SafeBotContacts
 }
 
 func New(
 	keyAPI string,
 	iConf *conf.InitConf,
 	sh *history.SafeHistory,
-	historyUpdSignalCh chan<- any,
+	updSignalCh chan<- any,
 ) *Bot {
 	// Authorize as bot
 	b, err := tg.NewBotAPI(keyAPI)
@@ -54,28 +51,28 @@ func New(
 	)
 	defer log.Printf("Authorized as %s", userName)
 
-	// Get _safe_ bot history and contacts
-	history, contacts := sh.Get(userName).Unpack()
+	// Get _safe_ bot data
+	data, _ := sh.Get(userName)
+	history, contacts := data.Get()
 
 	// Get bot config path
-	confPath := filepath.Join(iConf.Paths.Bots, userName+".json")
+	confPath := filepath.Join(
+		iConf.Paths.BotsConfDir, userName+".json",
+	)
 	// Load bot config
 	conf := conf.MustLoadBotConf(confPath)
 
-	// Get bot instance as pointer
+	// Return bot instance via pointer
 	return &Bot{
-		API:                b,
-		ID:                 b.Self.ID,
-		UserName:           userName,
-		FirstName:          firstName,
-		confPath:           confPath,
-		Conf:               conf,
-		PromptTemplates:    &iConf.PromptTemplates,
-		AllowedChats:       &iConf.AllowedChats,
-		MemoryLimits:       &iConf.MemoryLimits,
-		HistoryUpdSignalCh: historyUpdSignalCh,
-		History:            history,
-		Contacts:           contacts,
+		API:         b,
+		ID:          b.Self.ID,
+		UserName:    userName,
+		FirstName:   firstName,
+		Conf:        conf,
+		Settings:    &iConf.BotSettings,
+		UpdSignalCh: updSignalCh,
+		History:     history,
+		Contacts:    contacts,
 	}
 }
 
@@ -109,20 +106,18 @@ func (bot *Bot) Start(ctx context.Context) {
 	u.Timeout = 30
 	updates := bot.API.GetUpdatesChan(u)
 
-	// Defer gracefull shutdown
-	defer func() {
-		log.Printf("Bot %s shut down gracefully", bot.UserName)
-	}()
-	// Handle updates until updates end or context done
+	// HANDLE updates until updates channel CLOSED or context DONE
+	defer log.Printf("Bot %s shut down gracefully", bot.UserName)
 	for {
 		select {
 		case update, ok := <-updates:
-			if !ok {
+			if !ok { // Check if updates channel closed
 				log.Printf(
 					"Bot %s update channel closed", bot.UserName,
 				)
 				return
 			}
+			// Proceed with handling in separate goroutine
 			go bot.handleUpdate(ctx, update)
 		case <-ctx.Done():
 			log.Printf(
@@ -165,12 +160,12 @@ func (bot *Bot) handleMessage(
 	// Get memory
 	memory := memory.New(
 		chatInfo.History, bot.Contacts,
-		chatInfo.LastMsg, bot.MemoryLimits,
+		chatInfo.LastMsg, &bot.Settings.MemoryLimits,
 	)
 
 	// Create model
 	model := model.New(
-		bot.Conf, bot.PromptTemplates, memory,
+		bot.Conf, &bot.Settings.PromptTemplates, memory,
 		chatInfo.LastMsg, bot.FirstName, chatInfo.Title,
 	)
 
@@ -181,8 +176,8 @@ func (bot *Bot) handleMessage(
 	chatInfo.LastMsg = replyInfo
 	bot.reflect(ctx, model, chatInfo)
 
-	// Save safe history
-	bot.HistoryUpdSignalCh <- struct{}{}
+	// Send update signal
+	bot.UpdSignalCh <- struct{}{}
 }
 
 // Replies to message in chat
@@ -219,5 +214,4 @@ func (bot *Bot) reflect(
 	chatInfo *messaging.ChatInfo,
 ) {
 	model.Reflect(ctx, chatInfo.LastMsg)
-
 }

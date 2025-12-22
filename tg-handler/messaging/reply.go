@@ -16,12 +16,12 @@ var (
 // Try to reply twice: with reply, with separate message
 func Reply(bot *tg.BotAPI, c *ChatInfo, text string) *tg.Message {
 	var (
-		msg = c.LastMsg.Message
-		cid = c.ID
+		msg    = c.LastMsg.Message
+		chatID = c.ID
 	)
 
 	// Construct message config and set it up for reply
-	m := tg.NewMessage(cid, text)
+	m := tg.NewMessage(chatID, text)
 	m.ReplyToMessageID = msg.MessageID
 
 	// Try to reply with reply

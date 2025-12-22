@@ -11,11 +11,15 @@ import (
 	"tg-handler/bot"
 	"tg-handler/conf"
 	"tg-handler/history"
+	"tg-handler/secret"
 )
 
 const InitConfPath = "./confs/init.json"
 
 func main() {
+	// Load API keys from secret file or panic
+	apiKeys := secret.MustLoadAPIKeys()
+
 	// Terminate on termination signal
 	ctx, cancel := signal.NotifyContext(
 		context.Background(), os.Interrupt, syscall.SIGTERM,
@@ -30,7 +34,7 @@ func main() {
 	sh := history.NewSafeHistory(h)
 
 	// Start cleaner and bots
-	wg, historyUpdSignalCh := startBots(ctx, iConf, sh)
+	wg, updateCh := startBots(ctx, iConf, apiKeys, sh)
 
 	// Await termination signal
 	<-ctx.Done()
@@ -39,7 +43,7 @@ func main() {
 	// Await bots shutdown
 	log.Println("Waiting for bot services to shutdown...")
 	wg.Wait()
-	close(historyUpdSignalCh)
+	close(updateCh)
 	log.Println("All bot services shutdown gracefully")
 
 	// Save history (maybe no need in final save?)
@@ -52,11 +56,12 @@ func main() {
 func startBots(
 	ctx context.Context,
 	iConf *conf.InitConf,
+	apiKeys []string,
 	sh *history.SafeHistory,
 ) (*sync.WaitGroup, chan any) {
 	var (
-		wg                 sync.WaitGroup
-		historyUpdSignalCh = make(chan any)
+		wg       sync.WaitGroup
+		updateCh = make(chan any)
 
 		historyPath = iConf.Paths.History
 	)
@@ -65,15 +70,15 @@ func startBots(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sh.Cleaner(ctx, historyPath, &iConf.CleanerIntervals)
+		sh.Cleaner(ctx, historyPath, &iConf.CleanerSettings)
 	}()
 
 	// Start all bots
-	for _, keyAPI := range iConf.KeysAPI {
+	for _, apiKey := range apiKeys {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			bot := bot.New(keyAPI, iConf, sh, historyUpdSignalCh)
+			bot := bot.New(apiKey, iConf, sh, updateCh)
 			bot.Start(ctx)
 		}()
 	}
@@ -82,8 +87,8 @@ func startBots(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sh.Saver(ctx, historyPath, historyUpdSignalCh)
+		sh.Saver(ctx, historyPath, updateCh)
 	}()
 
-	return &wg, historyUpdSignalCh
+	return &wg, updateCh
 }

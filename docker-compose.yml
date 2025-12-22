@@ -4,11 +4,15 @@ services:
     build:
       context: .
       dockerfile: tg-handler/Dockerfile
+    environment:
+      API_KEYS_FILE: /run/secrets/api_keys.txt
     volumes:
-      - /etc/tg-llm-multibot/confs:/app/confs:ro
-      - /etc/tg-llm-multibot/history:/app/history
+      - ./confs:/app/confs:ro
+      - ./.history:/app/history
     networks:
       - ollama-network
+    secrets:
+      - api_keys
     depends_on:
       ollama:
         condition: service_healthy
@@ -43,7 +47,7 @@ services:
       test: ["CMD","sh", "-c", "ollama ps | grep -q 'huihui_ai/qwen3-abliterated:14b-q8_0'"]
       interval: 10s
       timeout: 10s
-      retries: 1080
+      retries: 1000
       start_period: 300s
 
 volumes:
@@ -51,3 +55,7 @@ volumes:
 
 networks:
   ollama-network:
+
+secrets:
+  api_keys:
+    file: api_keys.txt

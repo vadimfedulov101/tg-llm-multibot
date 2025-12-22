@@ -153,6 +153,7 @@ func fmtNotePrompt(
 	var (
 		botName  = names.Bot
 		userName = names.User
+		contact  = memory.BotContacts.Get(userName)
 	)
 
 	return fmt.Sprintf(template,
@@ -162,7 +163,7 @@ func fmtNotePrompt(
 		memory.ChatQueueLines,
 		line,
 		"%s", // Final response placeholder
-		userName, memory.BotContacts[userName].Note,
+		userName, contact.Note,
 		userName, limit,
 	)
 
@@ -178,6 +179,7 @@ func fmtCarmaPrompt(
 	var (
 		botName  = names.Bot
 		userName = names.User
+		contact  = memory.BotContacts.Get(userName)
 	)
 
 	return fmt.Sprintf(template,
@@ -187,6 +189,6 @@ func fmtCarmaPrompt(
 		memory.ChatQueueLines,
 		line,
 		"%s", // Final response placeholder
-		userName, memory.BotContacts[userName].Carma,
+		userName, contact.Carma,
 	)
 }

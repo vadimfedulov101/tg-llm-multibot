@@ -20,12 +20,17 @@ var (
 	ErrSignalFailed = errors.New("[messaging] signal request failed")
 )
 
+// Messaging messages
+const (
+	ctxDoneMsg = "[messaging] typing context done"
+)
+
 // Sends typing signal until context done
 func Type(ctx context.Context, bot *tg.BotAPI, c *ChatInfo) {
-	cid := c.ID
+	chatID := c.ID
 
 	// Type right away
-	sendSignal(bot, cid, signal)
+	sendSignal(bot, chatID, signal)
 
 	// Set ticker with interval
 	t := time.NewTicker(interval)
@@ -35,16 +40,17 @@ func Type(ctx context.Context, bot *tg.BotAPI, c *ChatInfo) {
 	for {
 		select {
 		case <-t.C:
-			sendSignal(bot, cid, signal)
+			sendSignal(bot, chatID, signal)
 		case <-ctx.Done():
+			log.Println(ctxDoneMsg)
 			return
 		}
 	}
 }
 
 // Sends signal via bot in specific chat
-func sendSignal(bot *tg.BotAPI, cid int64, signal string) {
-	actConf := tg.NewChatAction(cid, signal)
+func sendSignal(bot *tg.BotAPI, chatID int64, signal string) {
+	actConf := tg.NewChatAction(chatID, signal)
 	_, err := bot.Request(actConf)
 	if err != nil {
 		log.Printf("%v for <%s>: %v", ErrSignalFailed, signal, err)

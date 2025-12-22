@@ -10,11 +10,6 @@ import (
 	"sync"
 )
 
-const (
-	botHistoryCap  = 256
-	botContactsCap = 256
-)
-
 type SafeHistory struct {
 	mu      sync.RWMutex
 	History History
@@ -69,6 +64,25 @@ func MustLoadHistory(source string) *History {
 
 	log.Println("[memory] history loaded")
 	return &history
+}
+
+// Gets safe chat history for cleaning
+func (sh *SafeHistory) GetChatHistory(
+	botName string,
+	chatID int64,
+) (*SafeChatHistory, bool) {
+	// Get safe bot data
+	sbd, ok := sh.Get(botName)
+	if !ok {
+		return nil, false
+	}
+
+	// Get only safe bot history
+	sbh, _ := sbd.Get()
+
+	// Get safe chat history
+	sch, ok := sbh.Get(chatID)
+	return sch, ok
 }
 
 // Saves history
@@ -133,7 +147,7 @@ func (sh *SafeHistory) init(botName string) *SafeBotData {
 	}
 
 	// Return new bot data
-	botData := NewSafeBotData(botHistoryCap, botContactsCap)
+	botData := NewSafeBotData()
 	sh.History[botName] = botData
 	return botData
 }

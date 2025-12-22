@@ -1,0 +1,2741 @@
+=== File: ./memory/memory.go ===
+package memory
+
+import (
+	"strings"
+
+	"tg-handler/conf"
+	"tg-handler/history"
+)
+
+// messaging.MessageInfo abstraction
+type LineChain interface {
+	lineProvider
+	prevLineProvider
+}
+
+type lineProvider interface {
+	Line() string
+}
+
+type prevLineProvider interface {
+	PrevLine() string
+}
+
+// Types are in `memory/types.go`
+type Memory = struct {
+	ChatQueueLines  ChatQueueLines           // Last message lines
+	ReplyChainLines ReplyChainLines          // Previous reply lines
+	BotContacts     *history.SafeBotContacts // User carmas/personas
+	Limits          *conf.MemoryLimits       // Limits metadata
+}
+
+// Constructs memory from safe chat history and safe bot contacts
+// with memory limits.
+func New(
+	sch *history.SafeChatHistory,
+	sbc *history.SafeBotContacts,
+	lc LineChain,
+	lims *conf.MemoryLimits,
+) *Memory {
+	// Get chat queue and reply chains
+	chatQueue, replyChains := sch.Unpack()
+
+	// Get memory limits
+	var (
+		chatQueueLim  = lims.ChatQueue
+		replyChainLim = lims.ReplyChain
+	)
+
+	// Return memory via pointer
+	return &Memory{
+		ChatQueueLines: chatQueue.GetLines(chatQueueLim),
+		ReplyChainLines: replyChains.GetLines(
+			lc.PrevLine(), lc.Line(), replyChainLim,
+		),
+		BotContacts: sbc,
+		Limits:      lims,
+	}
+}
+
+// Memory
+type (
+	ChatQueueLines  []string
+	ReplyChainLines []string
+)
+
+// Chat queue lines as string
+func (cq ChatQueueLines) String() string {
+	var sb strings.Builder
+	for _, line := range cq {
+		sb.WriteString(line)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+// Reply chain lines as string
+func (rc ReplyChainLines) String() string {
+	var sb strings.Builder
+	for _, line := range rc {
+		sb.WriteString(line)
+		sb.WriteByte('\n')
+	}
+	return sb.String()
+}
+
+=== File: ./history/cleaner.go ===
+package history
+
+import (
+	"context"
+	"errors"
+	"log"
+	"runtime"
+	"sync"
+	"time"
+
+	"tg-handler/conf"
+)
+
+// Cleaner errors
+var (
+	ErrSaveFailed = errors.New("[cleaner] failed to save history")
+)
+
+// Context message variations
+const (
+	// Main message
+	ctxDoneMsg = "[cleaner] received shutdown signal upon"
+
+	// Operations
+	opCleanAndSave = "clean and save operation"
+	opSendingJobs  = "sending jobs to channel"
+	opGettingJobs  = "getting jobs from channel"
+)
+
+// Single unit of update
+type CleanJob struct {
+	BotName string
+	CID     int64
+}
+
+// Deletes messages with expired TTL every clean up interval
+func (safeHistory *SafeHistory) Cleaner(
+	ctx context.Context,
+	path string,
+	settings *conf.CleanerSettings,
+) {
+	// Get variables
+	var (
+		cleanupInterval = time.Duration(settings.CleanupInterval)
+		messageTTL      = time.Duration(settings.MessageTTL)
+	)
+
+	// Start ticker
+	t := time.NewTicker(cleanupInterval)
+	defer t.Stop()
+
+	// Clean and save on tick until context done
+	defer log.Println("Cleaner shut down gracefully")
+	for {
+		select {
+		case <-t.C:
+			done := safeHistory.cleanAndSave(ctx, path, messageTTL)
+			if done { // Check deeper context done
+				return
+			}
+		case <-ctx.Done():
+			log.Println(ctxDoneMsg + opCleanAndSave)
+			return
+		}
+	}
+}
+
+// Cleans in runtime and saves history locally
+func (sh *SafeHistory) cleanAndSave(
+	ctx context.Context,
+	historyPath string,
+	messageTTL time.Duration,
+) bool {
+	// Clean
+	done := sh.clean(ctx, messageTTL)
+	if done { // Check deeper context done
+		return true
+	}
+
+	// Save history
+	if err := sh.Save(historyPath); err != nil {
+		log.Printf("%v: %v", ErrSaveFailed, err)
+	}
+
+	return false
+}
+
+// Deletes expired messages in safe history
+func (sh *SafeHistory) clean(
+	ctx context.Context,
+	messageTTL time.Duration,
+) bool {
+	var wg sync.WaitGroup
+
+	// Get current time
+	currentTime := time.Now()
+
+	// COLLECT all jobs
+	jobs := sh.collectCleanJobs()
+	if len(jobs) == 0 {
+		return false
+	}
+
+	// CREATE worker pool (no more workers than jobs)
+	workerCount := min(runtime.GOMAXPROCS(0), len(jobs))
+	jobsChan := make(chan CleanJob, len(jobs))
+
+	// START workers
+	doneChan := make(chan struct{})
+	for workerID := range workerCount {
+		wg.Go(func() {
+			done := sh.cleanWorker(
+				ctx, currentTime, messageTTL, jobsChan, workerID,
+			)
+			if done { // Check deeper context done
+				doneChan <- struct{}{} // Notify external loop
+			}
+		})
+		// Check if context DONE in goroutine
+		select {
+		case <-doneChan:
+			close(doneChan)
+			close(jobsChan)
+			return true
+		default:
+		}
+	}
+	close(doneChan)
+
+	// SEND jobs to channel until context DONE
+	for _, job := range jobs {
+		select {
+		case jobsChan <- job:
+		case <-ctx.Done():
+			close(jobsChan)
+			log.Println(ctxDoneMsg + opSendingJobs)
+			return true
+		}
+	}
+	close(jobsChan) // All jobs sent
+
+	// WAIT for completion
+	wg.Wait()
+
+	return true
+}
+
+func (sh *SafeHistory) collectCleanJobs() []CleanJob {
+	var jobs []CleanJob
+
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+
+	// Iterate over safe bot data
+	for botName, sbd := range sh.History {
+		sbd.mu.RLock()
+
+		// Get only safe bot history
+		sbh := &sbd.Data.History // Safe bot history is auto-cleaned
+
+		// Iterate over safe bot history
+		sbh.mu.RLock()
+		for cid := range sbh.History {
+			jobs = append(jobs, CleanJob{
+				BotName: botName,
+				CID:     cid,
+			})
+		}
+		sbh.mu.RUnlock()
+
+		sbd.mu.RUnlock()
+	}
+
+	log.Printf("[cleaner] collected %d jobs", len(jobs))
+	return jobs
+}
+
+// Processess clean jobs with context
+func (sh *SafeHistory) cleanWorker(
+	ctx context.Context,
+	currentTime time.Time,
+	messageTTL time.Duration,
+	jobsChan <-chan CleanJob,
+	workerID int,
+) bool {
+	// GET jobs from channel jobs channel CLOSED or context DONE
+	for processed := 0; ; processed++ {
+		select {
+		case job, ok := <-jobsChan:
+			if !ok { // Check if jobs channel closed
+				log.Println("[cleaner] jobs channel closed")
+				log.Printf(
+					"[cleaner] worker %d processed %d jobs",
+					workerID, processed,
+				)
+				return false
+			}
+			// Proceed to process the job
+			sh.processCleanJob(currentTime, messageTTL, job)
+		case <-ctx.Done():
+			log.Println(ctxDoneMsg + opGettingJobs)
+			return true
+		}
+	}
+}
+
+// Handles single chat cleanup
+func (sh *SafeHistory) processCleanJob(
+	currentTime time.Time,
+	messageTTL time.Duration,
+	job CleanJob,
+) {
+	// Get chat directly without creating new ones
+	sch, ok := sh.GetChatHistory(job.BotName, job.CID)
+	if !ok {
+		return
+	}
+
+	// Clean both structures
+	sch.History.ChatQueue.clean(currentTime, messageTTL)
+	sch.History.ReplyChains.clean(currentTime, messageTTL)
+}
+
+func (sh *SafeHistory) getChatHistory(
+	botName string,
+	chatID int64,
+) (*SafeChatHistory, bool) {
+	// Get safe bot data
+	sbd, ok := sh.Get(botName)
+	if !ok {
+		return nil, false
+	}
+
+	// Get only safe bot history
+	sbh, _ := sbd.Get() // Omit safe bot contacts as auto-cleaned
+
+	// Get safe chat history
+	sch, ok := sbh.Get(chatID)
+	return sch, ok
+}
+
+// Deletes expired messages in chat queue
+func (scq *SafeChatQueue) clean(
+	currentTime time.Time,
+	messageTTL time.Duration,
+) {
+	// Ensure secure access
+	scq.mu.Lock()
+	defer scq.mu.Unlock()
+
+	// Get reply chains
+	chatQueue := scq.ChatQueue
+
+	// Create new slice pointing to the same array
+	queue := chatQueue[:0]
+
+	// Append every not-expired message entry to new slice
+	for _, messageEntry := range chatQueue {
+		if currentTime.Sub(messageEntry.Timestamp) <= messageTTL {
+			queue = append(queue, messageEntry)
+		}
+	}
+
+	// Set array to new slice
+	scq.ChatQueue = queue
+}
+
+// Deletes expired messages in reply chains
+func (src *SafeReplyChains) clean(
+	currentTime time.Time,
+	messageTTL time.Duration,
+) {
+	// Ensure secure access
+	src.mu.Lock()
+	defer src.mu.Unlock()
+
+	// Get reply chains
+	replyChains := src.ReplyChains
+
+	// Delete messages which time of existence
+	// is longer than time to live.
+	for line, messageEntry := range replyChains {
+		if currentTime.Sub(messageEntry.Timestamp) > messageTTL {
+			delete(replyChains, line)
+		}
+	}
+}
+
+=== File: ./history/saver.go ===
+package history
+
+import (
+	"context"
+	"log"
+)
+
+// Saves safe history on each update signal
+func (safeHistory *SafeHistory) Saver(
+	ctx context.Context, path string, updateCh <-chan any,
+) {
+	// Save history on signal until channel CLOSED or context DONE
+	defer log.Println("[history] saver shut down gracefully")
+	for {
+		select {
+		case _, ok := <-updateCh:
+			if !ok { // Check if update channel closed
+				log.Println("[history] update channel was closed")
+				return
+			}
+			safeHistory.Save(path)
+		case <-ctx.Done():
+			log.Println("[history] saver received shutdown signal")
+			return
+		}
+	}
+}
+
+=== File: ./history/chat_level.go ===
+package history
+
+import (
+	"log"
+	"sync"
+)
+
+const (
+	chatQueueCap   = 256
+	replyChainsCap = 256
+)
+
+// messaging.MessageInfo abstraction
+type LineChain interface {
+	lineProvider
+	prevLineProvider
+}
+
+type lineProvider interface {
+	Line() string
+}
+
+type prevLineProvider interface {
+	PrevLine() string
+}
+
+// (SAFE) CHAT HISTORY
+
+type SafeChatHistory struct {
+	mu      sync.RWMutex
+	History ChatHistory
+}
+
+func NewSafeChatHistory() *SafeChatHistory {
+	return &SafeChatHistory{
+		History: *NewChatHistory(),
+	}
+}
+
+type ChatHistory struct {
+	ChatQueue   SafeChatQueue
+	ReplyChains SafeReplyChains
+}
+
+func NewChatHistory() *ChatHistory {
+	return &ChatHistory{
+		ChatQueue:   *NewSafeChatQueue(),
+		ReplyChains: *NewSafeReplyChains(),
+	}
+}
+
+// CHAT QUEUE BRANCH
+
+type SafeChatQueue struct {
+	mu        sync.Mutex
+	ChatQueue ChatQueue
+}
+
+func NewSafeChatQueue() *SafeChatQueue {
+	return &SafeChatQueue{
+		ChatQueue: *NewChatQueue(),
+	}
+
+}
+
+type ChatQueue []MessageEntry
+
+func NewChatQueue() *ChatQueue {
+	c := make(ChatQueue, 0, chatQueueCap)
+	return &c
+}
+
+// REPLY CHAINS BRANCH
+
+type SafeReplyChains struct {
+	mu          sync.Mutex
+	ReplyChains ReplyChains
+}
+
+func NewSafeReplyChains() *SafeReplyChains {
+	return &SafeReplyChains{
+		ReplyChains: *NewReplyChains(),
+	}
+
+}
+
+type ReplyChains map[string]MessageEntry
+
+func NewReplyChains() *ReplyChains {
+	r := make(ReplyChains, replyChainsCap)
+	return &r
+}
+
+// METHODS
+
+// Unpacks chat queue and reply chains from safe chat history
+func (sch *SafeChatHistory) Unpack() (*SafeChatQueue, *SafeReplyChains) {
+	// Ensure secure access
+	sch.mu.RLock()
+	defer sch.mu.RUnlock()
+
+	// Get history and its content
+	history := &sch.History
+	return &history.ChatQueue, &history.ReplyChains
+}
+
+// Adds message to queue and chains
+func (sch *SafeChatHistory) AddTo(lc LineChain) {
+	// Ensure secure access
+	sch.mu.Lock()
+	defer sch.mu.Unlock()
+
+	// Unpack safe chat history
+	chatQueue, replyChain := sch.Unpack()
+
+	chatQueue.AddTo(lc)
+	replyChain.AddTo(lc)
+}
+
+// Add to chat queue
+func (scq *SafeChatQueue) AddTo(lc LineChain) {
+	scq.AppendLine(lc.Line())
+	log.Println("[history] chat queue++")
+}
+
+// Add to reply chains
+func (src *SafeReplyChains) AddTo(lc LineChain) {
+	lines := src.GetLines(lc.PrevLine(), lc.Line(), 2)
+	src.SetLines(lines)
+
+	log.Println("[history] reply chains++")
+}
+
+// Appends line to safe chat queue
+func (scq *SafeChatQueue) AppendLine(line string) {
+	// Ensure secure access
+	scq.mu.Lock()
+	defer scq.mu.Unlock()
+
+	// Get message entry
+	messageEntry := *NewMessageEntry(line)
+
+	// Append message entry to chat queue
+	scq.ChatQueue = append(scq.ChatQueue, messageEntry)
+}
+
+// Gets lines from safe chat queue
+func (scq *SafeChatQueue) GetLines(limit int) []string {
+	lines := make([]string, 0, limit)
+
+	// Ensure secure access
+	scq.mu.Lock()
+	defer scq.mu.Unlock()
+
+	// Get chat queue
+	chatQueue := scq.ChatQueue
+
+	// Accumulate lines with memory limit
+	for i, messageEntry := range chatQueue {
+		if i+1 > limit {
+			break
+		}
+		lines = append(lines, messageEntry.Line)
+	}
+
+	log.Printf(
+		"[history] chat queue: %d message lines", len(lines),
+	)
+	return lines
+}
+
+// Sets lines in safe reply chains
+func (src *SafeReplyChains) SetLines(lines []string) {
+	// Incomplete or too long chain, no set
+	if len(lines) != 2 {
+		return
+	}
+
+	// Ensure secure access
+	src.mu.Lock()
+	defer src.mu.Unlock()
+
+	// Get reply chains
+	replyChains := src.ReplyChains
+
+	// Set lines
+	var (
+		prevLine = lines[0]
+		lastLine = lines[1]
+	)
+
+	// Set chain
+	replyChains[lastLine] = *NewMessageEntry(prevLine)
+}
+
+// Gets lines from safe reply chains with limit
+func (src *SafeReplyChains) GetLines(
+	prevLine string,
+	lastLine string,
+	limit int,
+) []string {
+	// Incomplete chain, no unroll
+	if prevLine == "" {
+		return []string{lastLine}
+	}
+	// Complete chain, proceed to unroll
+	replyChain := []string{lastLine, prevLine}
+
+	// Ensure secure access
+	src.mu.Lock()
+	defer src.mu.Unlock()
+
+	// Get reply chains
+	replyChains := src.ReplyChains
+
+	// Accumulate lines unrolling reply chain backwards
+	// up to memory limit
+	for range limit - 2 {
+		lastLine = prevLine
+		if messageEntry, ok := replyChains[lastLine]; ok {
+			prevLine = messageEntry.Line
+			replyChain = append(replyChain, prevLine)
+		} else {
+			break
+		}
+	}
+
+	// Reverse reply chain
+	for i, j := 0, len(replyChain)-1; i < j; i, j = i+1, j-1 {
+		replyChain[i], replyChain[j] = replyChain[j], replyChain[i]
+	}
+
+	log.Printf(
+		"[history] reply chain: %d message lines", len(replyChain),
+	)
+	return replyChain
+}
+
+=== File: ./history/message_level.go ===
+package history
+
+import (
+	"time"
+)
+
+type MessageEntry struct {
+	Line      string    `json:"msg"`
+	Timestamp time.Time `json:"ts"`
+}
+
+func NewMessageEntry(line string) *MessageEntry {
+	return &MessageEntry{
+		Line:      line,
+		Timestamp: time.Now(),
+	}
+}
+
+=== File: ./history/bot_level.go ===
+package history
+
+import (
+	"fmt"
+	"strings"
+	"sync"
+)
+
+const (
+	botHistoryCap  = 256
+	botContactsCap = 256
+)
+
+// (SAFE) BOT DATA
+
+type SafeBotData struct {
+	mu   sync.RWMutex
+	Data BotData
+}
+
+func NewSafeBotData() *SafeBotData {
+	return &SafeBotData{
+		Data: *NewBotData(),
+	}
+}
+
+type BotData struct {
+	History  SafeBotHistory
+	Contacts SafeBotContacts
+}
+
+func NewBotData() *BotData {
+	return &BotData{
+		History:  *NewSafeBotHistory(),
+		Contacts: *NewSafeBotContacts(),
+	}
+}
+
+// SAFE BOT DATA
+
+func (sbd *SafeBotData) Get() (*SafeBotHistory, *SafeBotContacts) {
+	// Ensure secure access
+	sbd.mu.RLock()
+	defer sbd.mu.RUnlock()
+
+	data := &sbd.Data
+	return &data.History, &data.Contacts
+}
+
+// BOT HISTORY BRANCH
+
+type SafeBotHistory struct {
+	mu      sync.RWMutex
+	History BotHistory
+}
+
+func NewSafeBotHistory() *SafeBotHistory {
+	return &SafeBotHistory{
+		History: *NewBotHistory(),
+	}
+}
+
+type BotHistory map[int64]*SafeChatHistory
+
+func NewBotHistory() *BotHistory {
+	h := make(BotHistory, botHistoryCap)
+	return &h
+}
+
+// BOT CONTACTS BRANCH
+
+type SafeBotContacts struct {
+	mu       sync.RWMutex
+	Contacts BotContacts
+}
+
+func NewSafeBotContacts() *SafeBotContacts {
+	return &SafeBotContacts{
+		Contacts: *NewBotContacts(),
+	}
+}
+
+func (sbcs *SafeBotContacts) String() string {
+	// Ensure secure access
+	sbcs.mu.RLock()
+	defer sbcs.mu.RUnlock()
+
+	// Return string
+	return sbcs.Contacts.String()
+}
+
+type BotContacts map[string]BotContact
+
+func NewBotContacts() *BotContacts {
+	bc := make(BotContacts, botContactsCap)
+	return &bc
+}
+
+func (bcs BotContacts) String() string {
+	var sb strings.Builder
+
+	if bcs == nil {
+		return "<no contacts>"
+	}
+
+	for userName, contact := range bcs {
+		sb.WriteString(
+			fmt.Sprintf("user: %s\n%s\n", userName, contact),
+		)
+	}
+
+	return sb.String()
+}
+
+// BOT CONTACT
+
+type BotContact struct {
+	Carma int
+	Note  string
+}
+
+func (bc BotContact) String() string {
+	return fmt.Sprintf(
+		"carma: %d\nnote:\n%s\n\n", bc.Carma, bc.Note,
+	)
+}
+
+// METHODS
+
+// BOT HISTORY BRANCH
+
+// Gets safe chat history and preexistence status
+func (sbh *SafeBotHistory) Get(cid int64) (*SafeChatHistory, bool) {
+	// Return existing chat history
+	if chatHistory, ok := sbh.get(cid); ok {
+		return chatHistory, true
+	}
+
+	// Return new chat history
+	return sbh.init(cid), false
+
+}
+
+func (sbh *SafeBotHistory) get(cid int64) (*SafeChatHistory, bool) {
+	// Ensure secure access
+	sbh.mu.RLock()
+	defer sbh.mu.RUnlock()
+
+	chatHistory, ok := sbh.History[cid]
+	return chatHistory, ok
+}
+
+func (sbh *SafeBotHistory) init(cid int64) *SafeChatHistory {
+	// Ensure secure access
+	sbh.mu.Lock()
+	defer sbh.mu.Unlock()
+
+	// No double check of initialization after lock release
+	// as there is one goroutine per bot & cleaner skips new data
+	// if chatHistory, ok := sbh.History[cid]; ok {
+	//	return chatHistory
+	// }
+
+	// Return new chat histroy
+	chatHistory := NewSafeChatHistory()
+	sbh.History[cid] = chatHistory
+	return chatHistory
+}
+
+// BOT CONTACTS BRANCH
+
+// Gets bot contact
+func (sbcs *SafeBotContacts) Get(userName string) BotContact {
+	// Ensure secure access
+	sbcs.mu.RLock()
+	defer sbcs.mu.RUnlock()
+
+	// Return existing bot contact
+	if botContact, ok := sbcs.Contacts[userName]; ok {
+		return botContact
+	}
+
+	// Return new bot contact
+	return BotContact{}
+}
+
+// Sets bot contact
+func (sbcs *SafeBotContacts) Set(
+	userName string,
+	botContact BotContact,
+) {
+	// Ensure secure access
+	sbcs.mu.Lock()
+	defer sbcs.mu.Unlock()
+
+	// Set bot contact
+	sbcs.Contacts[userName] = botContact
+}
+
+=== File: ./history/history_level.go ===
+package history
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"os"
+	"sync"
+)
+
+type SafeHistory struct {
+	mu      sync.RWMutex
+	History History
+}
+
+func NewSafeHistory(h *History) *SafeHistory {
+	return &SafeHistory{
+		History: *h,
+	}
+}
+
+type History map[string]*SafeBotData
+
+// History errors
+var (
+	ErrGetPathFailed   = errors.New("[history] failed to get history path")
+	ErrOpenFailed      = errors.New("[history] failed to open history file")
+	ErrReadFailed      = errors.New("[history] failed to read history file")
+	ErrWriteFailed     = errors.New("[history] failed to write history file")
+	ErrMarshalFailed   = errors.New("[history] failed to marshal history file")
+	ErrUnmarshalFailed = errors.New("[history] failed to unmarshal history file")
+)
+
+// UNSAFE! Loads history as shared once
+func MustLoadHistory(source string) *History {
+	// Check if source is empty
+	if source == "" {
+		log.Panicf("%v", ErrGetPathFailed)
+	}
+
+	// Start with empty history
+	history := make(History)
+
+	// Open/create file
+	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Panicf("%v: %v", ErrOpenFailed, err)
+	}
+	defer file.Close()
+
+	// Read JSON data from file
+	data, err := io.ReadAll(file)
+	if err != nil {
+		log.Panicf("%v: %v", ErrReadFailed, err)
+	}
+
+	// Decode JSON data to history
+	if err := json.Unmarshal(data, &history); err != nil {
+		log.Printf("%v: %v", ErrUnmarshalFailed, err)
+		log.Printf("[memory] opting to empty history")
+	}
+
+	log.Println("[memory] history loaded")
+	return &history
+}
+
+// Gets safe chat history for cleaning
+func (sh *SafeHistory) GetChatHistory(
+	botName string,
+	chatID int64,
+) (*SafeChatHistory, bool) {
+	// Get safe bot data
+	sbd, ok := sh.Get(botName)
+	if !ok {
+		return nil, false
+	}
+
+	// Get only safe bot history
+	sbh, _ := sbd.Get()
+
+	// Get safe chat history
+	sch, ok := sbh.Get(chatID)
+	return sch, ok
+}
+
+// Saves history
+func (sh *SafeHistory) Save(dest string) error {
+	// Ensure secure access
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	// Open/create file
+	file, err := os.OpenFile(
+		dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
+	)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrOpenFailed, err)
+	}
+	defer file.Close()
+
+	// Encode history to JSON data
+	data, err := json.Marshal(sh.History)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrMarshalFailed, err)
+	}
+
+	// Write JSON data to file
+	_, err = file.Write(data)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrWriteFailed, err)
+	}
+
+	log.Println("[memory] history written")
+	return nil
+}
+
+// Gets safe bot data and its preexistence status
+func (sh *SafeHistory) Get(botName string) (*SafeBotData, bool) {
+	// Return existing bot data
+	if botData, ok := sh.get(botName); ok {
+		return botData, true
+	}
+
+	// Return new bot data
+	return sh.init(botName), false
+}
+
+func (sh *SafeHistory) get(botName string) (*SafeBotData, bool) {
+	// Ensure secure access
+	sh.mu.RLock()
+	defer sh.mu.RUnlock()
+
+	botData, ok := sh.History[botName]
+	return botData, ok
+}
+
+func (sh *SafeHistory) init(botName string) *SafeBotData {
+	// Ensure secure access
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+
+	// Double check initialization after lock release
+	if botData, ok := sh.History[botName]; ok {
+		return botData
+	}
+
+	// Return new bot data
+	botData := NewSafeBotData()
+	sh.History[botName] = botData
+	return botData
+}
+
+=== File: ./go.mod ===
+module tg-handler
+
+go 1.25.4
+
+require (
+	github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1
+	github.com/joho/godotenv v1.5.1
+	golang.org/x/text v0.31.0
+)
+
+=== File: ./Dockerfile ===
+# Stage 1: Compile Go application
+FROM golang:1.25.5-alpine3.22 AS builder
+
+LABEL stage=gobuilder
+
+WORKDIR /build
+
+ENV CGO_ENABLED=0
+ENV GOOS=linux
+ENV GOARCH=amd64
+
+COPY ./tg-handler/go.mod ./tg-handler/go.sum .
+RUN go mod download
+
+COPY ./tg-handler .
+
+# Compression (uncomment lines around build to enable)
+# RUN apk update --no-cache && apk add --no-cache upx
+RUN go build -ldflags="-s -w" main.go
+# upx --best --lzma main
+
+# Stage 2: Create a lightweight image
+FROM alpine
+
+RUN apk update --no-cache && apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+COPY --from=builder /build/main .
+
+CMD ["./main"]
+
+=== File: ./main.go ===
+package main
+
+import (
+	"context"
+	"log"
+	"os"
+	"os/signal"
+	"sync"
+	"syscall"
+
+	"tg-handler/bot"
+	"tg-handler/conf"
+	"tg-handler/history"
+	"tg-handler/secret"
+)
+
+const InitConfPath = "./confs/init.json"
+
+func main() {
+	// Load API keys from secret file or panic
+	apiKeys := secret.MustLoadAPIKeys()
+
+	// Terminate on termination signal
+	ctx, cancel := signal.NotifyContext(
+		context.Background(), os.Interrupt, syscall.SIGTERM,
+	)
+	defer cancel()
+
+	// Get init config
+	iConf := conf.MustLoadInitConf(InitConfPath)
+
+	// Get safe history
+	h := history.MustLoadHistory(iConf.Paths.History)
+	sh := history.NewSafeHistory(h)
+
+	// Start cleaner and bots
+	wg, updateCh := startBots(ctx, iConf, apiKeys, sh)
+
+	// Await termination signal
+	<-ctx.Done()
+	log.Println("Shutting down...")
+
+	// Await bots shutdown
+	log.Println("Waiting for bot services to shutdown...")
+	wg.Wait()
+	close(updateCh)
+	log.Println("All bot services shutdown gracefully")
+
+	// Save history (maybe no need in final save?)
+	// log.Println("Saving history...")
+	// sh.Save(iConf.Paths.History)
+	// log.Println("History saved")
+}
+
+// Starts bots with API keys
+func startBots(
+	ctx context.Context,
+	iConf *conf.InitConf,
+	apiKeys []string,
+	sh *history.SafeHistory,
+) (*sync.WaitGroup, chan any) {
+	var (
+		wg       sync.WaitGroup
+		updateCh = make(chan any)
+
+		historyPath = iConf.Paths.History
+	)
+
+	// Start cleaner
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sh.Cleaner(ctx, historyPath, &iConf.CleanerSettings)
+	}()
+
+	// Start all bots
+	for _, apiKey := range apiKeys {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			bot := bot.New(apiKey, iConf, sh, updateCh)
+			bot.Start(ctx)
+		}()
+	}
+
+	// Start history saver
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sh.Saver(ctx, historyPath, updateCh)
+	}()
+
+	return &wg, updateCh
+}
+
+=== File: ./messaging/reply.go ===
+package messaging
+
+import (
+	"errors"
+	"log"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+// Messaging errors
+var (
+	ErrDirectReplyFailed   = errors.New("[messaging] direct reply failed")
+	ErrIndirectReplyFailed = errors.New("[messaging] indirect reply failed")
+)
+
+// Try to reply twice: with reply, with separate message
+func Reply(bot *tg.BotAPI, c *ChatInfo, text string) *tg.Message {
+	var (
+		msg    = c.LastMsg.Message
+		chatID = c.ID
+	)
+
+	// Construct message config and set it up for reply
+	m := tg.NewMessage(chatID, text)
+	m.ReplyToMessageID = msg.MessageID
+
+	// Try to reply with reply
+	response, err := bot.Send(m)
+	if err != nil { // Try to reply with separate message
+		log.Printf("%v: %v", ErrDirectReplyFailed, err)
+		m.ReplyToMessageID = 0
+		response, err = bot.Send(m)
+	}
+	if err != nil {
+		log.Printf("%v: %v", ErrIndirectReplyFailed, err)
+	}
+
+	return &response
+}
+
+=== File: ./messaging/chat_info.go ===
+package messaging
+
+import (
+	"fmt"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"tg-handler/history"
+)
+
+// ChatInfo stores all chat data info important for bot
+type ChatInfo struct {
+	ID        int64
+	Title     string
+	History   *history.SafeChatHistory
+	IsAllowed bool
+	LastMsg   *MessageInfo
+}
+
+func NewChatInfo(
+	m *MessageInfo,
+	sbh *history.SafeBotHistory,
+	validateChat func(*tg.Message, int64) bool,
+) *ChatInfo {
+	// Get message and sender
+	var (
+		msg    = m.Message
+		sender = m.Sender()
+		isVIP  = m.IsVIP
+	)
+
+	// Get chat
+	chat := msg.Chat
+
+	// Get chat ID and type
+	var (
+		chatID    = chat.ID
+		isPrivate = chat.IsPrivate()
+	)
+
+	// Check if chat is allowed
+	var isAllowed bool
+	if isVIP {
+		isAllowed = true
+	} else {
+		isAllowed = validateChat(msg, chatID)
+	}
+
+	// Get history
+	SafeChatHistory, _ := sbh.Get(chatID)
+
+	return &ChatInfo{
+		ID:        chatID,
+		Title:     getChatTitle(msg, sender, isPrivate),
+		History:   SafeChatHistory,
+		IsAllowed: isAllowed,
+		LastMsg:   m,
+	}
+}
+
+// Gets chat title for public and private chats
+func getChatTitle(msg *tg.Message, sender string, isPrivate bool) string {
+	if isPrivate {
+		return fmt.Sprintf("%s's private", sender)
+	}
+	return msg.Chat.Title
+}
+
+=== File: ./messaging/message_info.go ===
+package messaging
+
+import (
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+// MessageInfo is recursive type.
+// We construct chat context and reply chain from it to keep history.
+// It implements LineChain (history/memory.go) providing Line() and PrevLine().
+type MessageInfo struct {
+	Message      *tg.Message
+	sender       string       // UserName / FirstName (+LastName)
+	line         string       // "Sender: text"
+	IsTriggering bool         // Triggering messages get replied
+	IsVIP        bool         // VIP allows bypass checks
+	prevMsg      *MessageInfo // Previous message info
+}
+
+// MessageInfo constructor relies on bot dictating how to detect admin, reply,
+// mentions; modify mentions. This dependency inversion enables to get suitable
+// Text and IsTriggering/IsVIP as direct message traits needed for validation.
+func NewMessageInfo(
+	bot *tg.BotAPI,
+	msg *tg.Message,
+	validateSender func(*tg.Message, string) bool,
+	detectReply func(*tg.Message) bool,
+	detectMentions func(string) bool,
+	modifyMentions func(string) string,
+	level int,
+) *MessageInfo {
+	// Handle nil and too deep recursion
+	if msg == nil || level > 2 {
+		return nil
+	}
+
+	// Get sender and text
+	var (
+		sender = getSender(msg)
+		text   = getText(msg)
+	)
+	// Return nil if no sender or text
+	if sender == "" || text == "" {
+		return nil
+	}
+
+	// Check if sender is admin (chat is allowed for their username)
+	isFromAdmin := validateSender(msg, sender)
+
+	// Check if replied
+	isReplied := detectReply(msg)
+
+	// Check if mentioned; modify mentions
+	isMentioned := detectMentions(text)
+	if isMentioned {
+		text = modifyMentions(text)
+	}
+
+	return &MessageInfo{
+		Message:      msg,
+		sender:       sender,
+		line:         getLine(sender, text),
+		IsTriggering: isFromAdmin || isReplied || isMentioned,
+		IsVIP:        isFromAdmin,
+		prevMsg: NewMessageInfo(
+			bot, msg.ReplyToMessage,
+			validateSender,
+			detectReply,
+			detectMentions,
+			modifyMentions,
+			level+1,
+		),
+	}
+}
+
+// Line exposed (history.LineChain & model.Message implemented)
+func (m *MessageInfo) Line() string {
+	return m.line
+}
+
+// Previous line exposed (history.LineChain implemented)
+func (m *MessageInfo) PrevLine() string {
+	prevMsg := m.prevMsg
+	if prevMsg != nil {
+		return prevMsg.Line()
+	}
+	return ""
+}
+
+// Sender exposed (model.Message implemented)
+func (m *MessageInfo) Sender() string {
+	return m.sender
+}
+
+// Gets any name from UserName/FirstName (+LastName)
+func getSender(msg *tg.Message) string {
+	return msg.From.String()
+}
+
+// Gets any text from Text/Caption
+func getText(msg *tg.Message) (text string) {
+	if msg.Text != "" {
+		text = msg.Text
+	}
+	if msg.Caption != "" {
+		text = msg.Caption
+	}
+
+	return text
+}
+
+// Gets "Sender: text" message history representation
+func getLine(sender string, text string) string {
+	titleizer := cases.Title(language.English)
+	return titleizer.String(sender) + ": " + text
+}
+
+=== File: ./messaging/typing.go ===
+package messaging
+
+import (
+	"context"
+	"errors"
+	"log"
+	"time"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+// Typing interval and signal
+const (
+	interval = 3 * time.Second
+	signal   = "typing"
+)
+
+// Messaging errors
+var (
+	ErrSignalFailed = errors.New("[messaging] signal request failed")
+)
+
+// Messaging messages
+const (
+	ctxDoneMsg = "[messaging] typing context done"
+)
+
+// Sends typing signal until context done
+func Type(ctx context.Context, bot *tg.BotAPI, c *ChatInfo) {
+	chatID := c.ID
+
+	// Type right away
+	sendSignal(bot, chatID, signal)
+
+	// Set ticker with interval
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	// Type on ticks, shut down on context done
+	for {
+		select {
+		case <-t.C:
+			sendSignal(bot, chatID, signal)
+		case <-ctx.Done():
+			log.Println(ctxDoneMsg)
+			return
+		}
+	}
+}
+
+// Sends signal via bot in specific chat
+func sendSignal(bot *tg.BotAPI, chatID int64, signal string) {
+	actConf := tg.NewChatAction(chatID, signal)
+	_, err := bot.Request(actConf)
+	if err != nil {
+		log.Printf("%v for <%s>: %v", ErrSignalFailed, signal, err)
+	}
+}
+
+=== File: ./conf/init.go ===
+package conf
+
+import (
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"strings"
+	"time"
+)
+
+// Initialization config errors
+var (
+	ErrIConfReadFailed = errors.New(
+		"[conf] read init config failed",
+	)
+	ErrIConfUnmarshalFailed = errors.New(
+		"[conf] unmarshal init config failed",
+	)
+	ErrIConfEmptyTemplate = errors.New(
+		"[conf] empty template",
+	)
+	ErrIConfWrongPlaceholderNum = errors.New(
+		"[conf] wrong placeholder number",
+	)
+)
+
+// Initialization config
+type InitConf struct {
+	Paths           Paths           `json:"paths"`
+	CleanerSettings CleanerSettings `json:"cleaner_settings"`
+	BotSettings     BotSettings     `json:"bot_settings"`
+}
+
+// Paths
+type Paths struct {
+	History     string `json:"history"`
+	BotsConfDir string `json:"bots_conf_dir"`
+}
+
+// Cleaner settings
+type CleanerSettings struct {
+	MessageTTL      Duration `json:"msg_ttl"`
+	CleanupInterval Duration `json:"cleanup_interval"`
+}
+
+// Bot settings
+type BotSettings struct {
+	PromptTemplates PromptTemplates `json:"prompt_templates"`
+	AllowedChats    AllowedChats    `json:"allowed_chats"`
+	MemoryLimits    MemoryLimits    `json:"memory_limits"`
+}
+
+// Allowed chats
+type AllowedChats struct {
+	Usernames []string `json:"usernames"`
+	IDs       []int64  `json:"ids"`
+}
+
+// Prompt templates
+type PromptTemplates struct {
+	Response string `json:"response"`
+	Select   string `json:"select"`
+	Note     string `json:"note"`
+	Carma    string `json:"carma"`
+}
+
+// Memory limits
+type MemoryLimits struct {
+	ChatQueue  int `json:"chat_queue"`
+	ReplyChain int `json:"reply_chain"`
+	Note       int `json:"note"`
+}
+
+type Duration time.Duration
+
+func (d *Duration) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	dur, err := time.ParseDuration(s)
+	if err != nil {
+		return err
+	}
+	*d = Duration(dur)
+	return nil
+}
+
+// Loads init config or panics
+func MustLoadInitConf(confPath string) *InitConf {
+	var initConf InitConf
+
+	// Read JSON data from file
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		log.Panicf("%v (%s): %v", ErrIConfReadFailed, confPath, err)
+	}
+
+	// Decode JSON data to InitConf
+	err = json.Unmarshal(data, &initConf)
+	if err != nil {
+		log.Panicf("%v (%s): %v", ErrIConfUnmarshalFailed, confPath, err)
+	}
+
+	// Validate templates or panic
+	mustValidateTemplates(&initConf.PromptTemplates)
+
+	return &initConf
+}
+
+// Validates prompts
+func mustValidateTemplates(templates *PromptTemplates) {
+	mustValidateResponseTemplate(templates.Response)
+	mustValidateSelectTemplate(templates.Select)
+	mustValidateNoteTemplate(templates.Note)
+	mustValidateCarmaTemplate(templates.Carma)
+}
+
+// Validates response template or panics
+func mustValidateResponseTemplate(template string) {
+	const tType = "response template"
+	mustValidateNumOf(template, "%s", 5, tType)
+}
+
+// Validates select template or panics
+func mustValidateSelectTemplate(template string) {
+	const tType = "select template"
+	mustValidateNumOf(template, "%s", 5, tType)
+	mustValidateNumOf(template, "%d", 1, tType)
+}
+
+// Validates note template or panics
+func mustValidateNoteTemplate(template string) {
+	const tType = "note template"
+	mustValidateNumOf(template, "%s", 10, tType)
+	mustValidateNumOf(template, "%d", 2, tType)
+}
+
+// Validates all templates or panics
+func mustValidateCarmaTemplate(template string) {
+	const tType = "carma template"
+	mustValidateNumOf(template, "%s", 8, tType)
+	mustValidateNumOf(template, "%d", 1, tType)
+}
+
+// Validates that 'template' of 'tType'
+// contains 's' exactly 'n' times or panics.
+func mustValidateNumOf(
+	template string, s string, n int, tType string,
+) {
+	var err error
+
+	// Handle empty template
+	if template == "" {
+		log.Panicf("%v", ErrIConfEmptyTemplate)
+	}
+
+	// Count s in template
+	num := strings.Count(template, s)
+	// Detect errors
+	if num < n {
+		err = fmt.Errorf("less than %d %s in %s", n, s, tType)
+	}
+	if num > n {
+		err = fmt.Errorf("more than %d %s in %s", n, s, tType)
+	}
+	// Panic on error
+	if err != nil {
+		log.Panicf(
+			"%v: %v: \"%s\"",
+			ErrIConfWrongPlaceholderNum, err, template,
+		)
+	}
+}
+
+=== File: ./conf/bot.go ===
+package conf
+
+import (
+	"encoding/json"
+	"errors"
+	"log"
+	"os"
+)
+
+// Bot config
+type BotConf struct {
+	Main     MainSettings     `json:"main_settings"`
+	Optional OptionalSettings `json:"optional_settings"`
+}
+
+// Main settings for LLM
+type MainSettings struct {
+	Role         string `json:"role"`
+	CandidateNum int    `json:"candidate_num"`
+}
+
+// Optional settings for LLM
+type OptionalSettings struct {
+	Temperature   float32 `json:"temperature,omitempty"`
+	RepeatPenalty float32 `json:"repeat_penalty,omitempty"`
+	TopP          float32 `json:"top_p,omitempty"`
+	TopK          int     `json:"top_k,omitempty"`
+	NumPredict    int     `json:"num_predict,omitempty"`
+	Seed          int     `json:"seed,omitempty"`
+}
+
+// Bot config errors
+var (
+	ErrBConfReadFailed = errors.New(
+		"[conf] read bot config failed",
+	)
+	ErrBConfUnmarshalFailed = errors.New(
+		"[conf] unmarshal bot config failed",
+	)
+)
+
+// Loads settings or panics
+func MustLoadBotConf(confPath string) *BotConf {
+	var botConf BotConf
+
+	// Read JSON data from file
+	data, err := os.ReadFile(confPath)
+	if err != nil {
+		log.Panicf("%v: %v", ErrBConfReadFailed, err)
+	}
+
+	// Decode JSON data to settings
+	err = json.Unmarshal(data, &botConf)
+	if err != nil {
+		log.Panicf("%v: %v", ErrBConfUnmarshalFailed, err)
+	}
+
+	return &botConf
+}
+
+=== File: ./model/carma.go ===
+package model
+
+type CarmaUpdate int
+
+const CarmaUpdateDelta = 10
+const (
+	CarmaUpdateNegative CarmaUpdate = -CarmaUpdateDelta
+	CarmaUpdateNeutral              = 0
+	CarmaUpdatePositive             = CarmaUpdateDelta
+)
+
+// To string
+var CarmaUpdateName = map[CarmaUpdate]string{
+	CarmaUpdateNegative: "-",
+	CarmaUpdateNeutral:  "=",
+	CarmaUpdatePositive: "+",
+}
+
+func (cu CarmaUpdate) String() string {
+	return CarmaUpdateName[cu]
+}
+
+// From string
+func NewCarmaUpdate(s string) (CarmaUpdate, error) {
+	switch s {
+	case "-":
+		return CarmaUpdateNegative, nil
+	case "=":
+		return CarmaUpdateNeutral, nil
+	case "+":
+		return CarmaUpdatePositive, nil
+	default:
+		return CarmaUpdateNeutral, ErrEnumOOV
+	}
+}
+
+=== File: ./model/model.go ===
+package model
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"strconv"
+	"strings"
+	"time"
+
+	"tg-handler/conf"
+	"tg-handler/memory"
+	"tg-handler/prompts"
+)
+
+// messaging.MessageInfo abstraction
+type Message interface {
+	SenderProvider
+	LineProvider
+}
+
+type SenderProvider interface {
+	Sender() string
+}
+
+type LineProvider interface {
+	Line() string
+}
+
+// API constants
+const (
+	model       = "huihui_ai/qwen3-abliterated:14b-q8_0"
+	apiUrl      = "http://ollama:11434/api/generate"
+	retryTime   = time.Minute
+	waitTimeout = 10 * time.Minute
+)
+
+// Retry constants
+const (
+	maxSelectTry = 10
+	maxNoteTry   = 10
+	maxCarmaTry  = 10
+)
+
+// Inference errors
+var (
+	// SELECT
+	// General error
+	ErrSelectFailed = errors.New("[model] selection failed")
+	// Specific errors to be wrapped
+	ErrIdxNaN = errors.New("candidate index is not a number")
+	ErrIdxOOB = errors.New("candidate index is out of bounds")
+
+	// Carma
+	// General error
+	ErrCarmaFailed = errors.New("[model] carma failed")
+	// Specific errors to be wrapped
+	ErrEnumOOV = errors.New("carma update outside of enum variants")
+)
+
+// LLM model
+type Model struct {
+	Config    *conf.BotConf
+	Prompts   *prompts.Prompts
+	Memory    *memory.Memory
+	BotName   string
+	ChatTitle string
+}
+
+func New(
+	botConf *conf.BotConf,
+	promptTemplates *conf.PromptTemplates,
+	memory *memory.Memory,
+	lastMsg Message,
+	botName string,
+	chatTitle string,
+) *Model {
+	// Format prompts
+	prompts := prompts.New(
+		botConf, promptTemplates,
+		memory, lastMsg, botName, chatTitle,
+	)
+
+	// Return model via pointer
+	return &Model{
+		Config:    botConf,
+		Prompts:   prompts,
+		Memory:    memory,
+		BotName:   botName,
+		ChatTitle: chatTitle,
+	}
+}
+
+// Candidates representation
+type Candidates []string
+
+func (cs Candidates) String() (s string) {
+	var sb strings.Builder
+	for i, candidate := range cs {
+		sb.WriteString(
+			fmt.Sprintf("[%d] <resp>%s</resp>\n\n", i+1, candidate),
+		)
+	}
+	return sb.String()
+}
+
+// Reacts to new message
+func (m *Model) React(ctx context.Context) string {
+	// Generate candidate(s)
+	candidates := m.generateCandidates(ctx)
+	if m.Config.Main.CandidateNum == 1 {
+		return candidates[0]
+	}
+
+	// Select candidate
+	candidateIdx := m.selectCandidate(ctx, candidates)
+
+	return candidates[candidateIdx]
+}
+
+// Reflects on response
+func (m *Model) Reflect(
+	ctx context.Context,
+	msg Message,
+) {
+	var (
+		sender      = msg.Sender()
+		botContacts = m.Memory.BotContacts
+	)
+
+	// Get bot contact to update
+	botContact := botContacts.Get(sender)
+
+	// Update bot contact carma
+	carmaUpdate := m.updateCarma(ctx, msg.Line())
+	botContact.Carma += int(carmaUpdate)
+
+	// Update bot contact persona
+	note := m.updateNote(ctx, msg.Line())
+	botContact.Note = note
+
+	// Update bot contacts with new bot contact
+	botContacts.Set(sender, botContact)
+}
+
+// Generates candidates
+func (m *Model) generateCandidates(ctx context.Context) []string {
+	// Create request
+	request := newRequest(m.Prompts.Response, m.Config)
+
+	// Prepare candidates and candidate number
+	candidateNum := m.Config.Main.CandidateNum
+	candidates := make([]string, 0, candidateNum)
+
+	// Generate candidates
+	for i := range candidateNum {
+		// Get new candidate
+		candidate := sendRequestEternal(ctx, request)
+
+		// Add new candidate
+		candidates = append(candidates, candidate)
+
+		log.Printf("[model] candidate %d: %s", i+1, candidate)
+	}
+
+	return candidates
+}
+
+// Selects candidate from all candidates
+func (m *Model) selectCandidate(
+	ctx context.Context,
+	candidates Candidates,
+) int {
+	// Finalizes prompt formatting
+	prompt := prompts.FinFmtSelectPrompt(m.Prompts.Select, candidates)
+
+	// Create request
+	request := newRequest(prompt, m.Config)
+
+	// Try to generate selection index
+	var err error
+	for i := range maxSelectTry {
+		// Log previous try error
+		if i > 0 {
+			log.Printf(
+				"Select try %d: %v: %v",
+				i+1, ErrSelectFailed, err,
+			)
+		}
+
+		// Send request
+		selectText := sendRequestEternal(ctx, request)
+
+		// Get selection number
+		selectNum, err := strconv.Atoi(selectText)
+		if err != nil {
+			err = fmt.Errorf("%w: %v", ErrIdxNaN, err)
+			continue // Fail
+		}
+
+		// Validate index
+		candidateIdx := selectNum - 1
+		if candidateIdx >= 0 && candidateIdx < len(candidates) {
+			log.Printf("[model] candidate idx: %d", candidateIdx)
+			return candidateIdx // Success
+		}
+		err = fmt.Errorf("%w: %d not in (0-%d)",
+			ErrIdxOOB, candidateIdx, len(candidates),
+		)
+	}
+
+	// Select 0-th candidate on fail
+	log.Printf("[model] candidate idx: %d", 0)
+	return 0
+}
+
+// Generates note update
+func (m *Model) updateNote(
+	ctx context.Context,
+	line string,
+) string {
+	// Finalize note prompt formatting
+	prompt := prompts.FinFmtNotePrompt(m.Prompts.Note, line)
+
+	// Create request
+	request := newRequest(prompt, m.Config)
+
+	// Get new note
+	note := sendRequestEternal(ctx, request)
+
+	// Cut hash tags
+	note = cutHashTags(note, m.Memory.Limits.Note)
+
+	log.Printf("[model] note: %s", note)
+	return note
+}
+
+// Generates carma update
+func (m *Model) updateCarma(
+	ctx context.Context,
+	line string,
+) CarmaUpdate {
+	// Finalize carma prompt formatting
+	prompt := prompts.FinFmtCarmaPrompt(m.Prompts.Carma, line)
+
+	// Create request
+	request := newRequest(prompt, m.Config)
+
+	var err error
+	for i := range maxCarmaTry {
+		// Log previous try error
+		if i > 0 {
+			log.Printf("Carma try %d: %v: %v", i+1, ErrCarmaFailed, err)
+		}
+
+		// Send request
+		carmaUpdateS := sendRequestEternal(ctx, request)
+
+		// Get carma update
+		carmaUpdate, err := NewCarmaUpdate(carmaUpdateS)
+		if err == nil {
+			log.Printf("[model] carma update: %s", carmaUpdate)
+			return carmaUpdate
+		}
+	}
+
+	// Return no carma update on fail
+	log.Printf("[model] carma update: %s", CarmaUpdateNeutral)
+	return CarmaUpdateNeutral
+}
+
+=== File: ./model/ollama.go ===
+package model
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"time"
+
+	"tg-handler/conf"
+)
+
+// Request to Ollama
+type Request struct {
+	Model        string                `json:"model"`
+	Prompt       string                `json:"prompt"`
+	Stream       bool                  `json:"stream"`
+	Options      conf.OptionalSettings `json:"options"`
+	SystemPrompt string                `json:"system,omitempty"`
+	Context      []int                 `json:"context,omitempty"`
+}
+
+func newRequest(prompt string, botConf *conf.BotConf) *Request {
+	return &Request{
+		Model:        model, // predefined constant
+		Prompt:       prompt,
+		Stream:       false,
+		SystemPrompt: botConf.Main.Role,
+		Options:      botConf.Optional,
+	}
+}
+
+// Response from Ollama
+type Response struct {
+	Model              string `json:"model"`
+	CreatedAt          string `json:"created_at"`
+	Response           string `json:"response"`
+	Done               bool   `json:"done"`
+	Context            []int  `json:"context,omitempty"`
+	TotalDuration      int64  `json:"total_duration,omitempty"`
+	LoadDuration       int64  `json:"load_duration,omitempty"`
+	PromptEvalCount    int    `json:"prompt_eval_count,omitempty"`
+	PromptEvalDuration int64  `json:"prompt_eval_duration,omitempty"`
+	EvalCount          int    `json:"eval_count,omitempty"`
+	EvalDuration       int64  `json:"eval_duration,omitempty"`
+}
+
+// Ollama errors
+var (
+	ErrMarshalFailed     = errors.New("[model] marshal request failed")
+	ErrRequestFailed     = errors.New("[model] create request failed")
+	ErrSendFailed        = errors.New("[model] send request failed")
+	ErrInvalidStatus     = errors.New("[model] invalid status code")
+	ErrDecodeFailed      = errors.New("[model] decode response failed")
+	ErrRequestIncomplete = errors.New("[model] request not completed")
+)
+
+// Eternally sends request to API and logs error
+func sendRequestEternal(ctx context.Context, request *Request) (text string) {
+	var err error
+	for {
+		text, err = sendRequest(ctx, request)
+		if err == nil {
+			break
+		}
+		log.Printf("Failed send: %v", err)
+		time.Sleep(retryTime)
+	}
+
+	return trimNoise(text)
+}
+
+// Sends Ollama request
+func sendRequest(ctx context.Context, request *Request) (string, error) {
+	// Encode request body to JSON data
+	jsonData, err := json.Marshal(request)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrMarshalFailed, err)
+	}
+
+	// Make POST request with JSON data
+	req, err := http.NewRequestWithContext(
+		ctx, "POST", apiUrl, bytes.NewBuffer(jsonData),
+	)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrRequestFailed, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	// Set HTTP client
+	client := &http.Client{Timeout: waitTimeout}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrSendFailed, err)
+	}
+	defer resp.Body.Close()
+
+	// Validate status code
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf(
+			"%w %d: %s", ErrInvalidStatus, resp.StatusCode, string(body),
+		)
+	}
+
+	// Decode response body
+	var response Response
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return "", fmt.Errorf("%w: %v", ErrDecodeFailed, err)
+	}
+
+	// Validate request completeness
+	if !response.Done {
+		return "", ErrRequestIncomplete
+	}
+
+	return response.Response, nil
+}
+
+=== File: ./model/trim.go ===
+package model
+
+import (
+	"strings"
+)
+
+// Cuts hash tags to limit
+func cutHashTags(note string, limit int) string {
+	// Get hashtags slice
+	hashtags := strings.Fields(note)
+
+	// Cut hashtags slice if longer than limit
+	if len(hashtags) > limit {
+		hashtags = hashtags[:limit]
+	}
+
+	// Return joined hashtags string
+	return strings.Join(hashtags, " ")
+}
+
+// Removes noise
+func trimNoise(s string) string {
+	s = trimThinkingTags(s)
+	s = strings.TrimSpace(s)
+
+	return s
+}
+
+// Removes <think>...</think> blocks from string
+func trimThinkingTags(s string) string {
+	startTag := "<think>"
+	endTag := "</think>"
+
+	for {
+		startIdx := strings.Index(s, startTag)
+		if startIdx == -1 {
+			break
+		}
+
+		endIdx := strings.Index(s, endTag)
+		if endIdx == -1 {
+			break
+		}
+
+		// Remove the thinking block including tags
+		s = s[:startIdx] + s[endIdx+len(endTag):]
+	}
+
+	return s
+}
+
+=== File: ./bot/helpers.go ===
+package bot
+
+import (
+	"slices"
+	"strings"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"tg-handler/conf"
+)
+
+// Reloads bot config or panics
+func (bot *Bot) mustReloadBotConf() {
+	bot.Conf = conf.MustLoadBotConf(bot.confPath)
+}
+
+// Gets sender validator for bot
+func (bot *Bot) getSenderValidator() func(*tg.Message, string) bool {
+	admins := bot.Settings.AllowedChats.Usernames
+
+	// Identifies if private sender is admin
+	return func(msg *tg.Message, sender string) bool {
+		if msg.Chat.IsPrivate() {
+			return slices.Contains(admins, sender)
+		}
+		return false
+	}
+}
+
+// Gets reply identifier for bot
+func (bot *Bot) getReplyDetector() func(msg *tg.Message) bool {
+	return func(msg *tg.Message) bool {
+		var isReplied bool
+
+		// Get replied message
+		repliedMsg := msg.ReplyToMessage
+		// Try to get replied user ID
+		var repliedUserID int64
+		if repliedMsg != nil {
+			repliedUserID = repliedMsg.From.ID
+		}
+
+		// Check if bot is replied
+		if repliedUserID == bot.ID {
+			isReplied = true
+		}
+
+		return isReplied
+	}
+}
+
+// Gets mention identifier for bot
+func (bot *Bot) getMentionDetector() func(string) bool {
+	// Identifies if text contains bot's @username
+	return func(text string) bool {
+		return strings.Contains(text, "@"+bot.UserName)
+	}
+}
+
+// Gets mention humanizer for bot
+func (bot *Bot) getMentionHumanizer() func(string) string {
+	// Substitutes bot's @username to first name in text
+	return func(text string) string {
+		return strings.ReplaceAll(text, "@"+bot.UserName, bot.FirstName)
+	}
+}
+
+// Gets chat validator for bot
+func (bot *Bot) getChatValidator() func(*tg.Message, int64) bool {
+	allowedCIDs := bot.Settings.AllowedChats.IDs
+
+	// Identifies if chat has allowed ID
+	return func(msg *tg.Message, cid int64) bool {
+		for _, allowedCID := range allowedCIDs {
+			if cid == allowedCID {
+				return true
+			}
+		}
+
+		return false
+	}
+}
+
+=== File: ./bot/bot.go ===
+package bot
+
+import (
+	"context"
+	"errors"
+	"log"
+	"path/filepath"
+
+	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+
+	"tg-handler/conf"
+	"tg-handler/history"
+	"tg-handler/memory"
+	"tg-handler/messaging"
+	"tg-handler/model"
+)
+
+// Bot errors
+var (
+	ErrAuth = errors.New("[bot] authorization failed")
+)
+
+type Bot struct {
+	API         *tg.BotAPI
+	ID          int64
+	UserName    string
+	FirstName   string
+	Conf        *conf.BotConf     // Loaded from bot config
+	Settings    *conf.BotSettings // Loaded from init config
+	UpdSignalCh chan<- any
+	History     *history.SafeBotHistory
+	Contacts    *history.SafeBotContacts
+}
+
+func New(
+	keyAPI string,
+	iConf *conf.InitConf,
+	sh *history.SafeHistory,
+	updSignalCh chan<- any,
+) *Bot {
+	// Authorize as bot
+	b, err := tg.NewBotAPI(keyAPI)
+	if err != nil {
+		log.Panicf("%v: %v", ErrAuth, err)
+	}
+
+	// Get bot names
+	var (
+		userName  = b.Self.UserName
+		firstName = b.Self.FirstName
+	)
+	defer log.Printf("Authorized as %s", userName)
+
+	// Get _safe_ bot data
+	data, _ := sh.Get(userName)
+	history, contacts := data.Get()
+
+	// Get bot config path
+	confPath := filepath.Join(
+		iConf.Paths.BotsConfDir, userName+".json",
+	)
+	// Load bot config
+	conf := conf.MustLoadBotConf(confPath)
+
+	// Return bot instance via pointer
+	return &Bot{
+		API:         b,
+		ID:          b.Self.ID,
+		UserName:    userName,
+		FirstName:   firstName,
+		Conf:        conf,
+		Settings:    &iConf.BotSettings,
+		UpdSignalCh: updSignalCh,
+		History:     history,
+		Contacts:    contacts,
+	}
+}
+
+// Gets message info for bot
+func (bot *Bot) getMessageInfo(
+	msg *tg.Message,
+) *messaging.MessageInfo {
+	return messaging.NewMessageInfo(
+		bot.API, msg,
+		bot.getSenderValidator(),
+		bot.getReplyDetector(),
+		bot.getMentionDetector(),
+		bot.getMentionHumanizer(),
+		1,
+	)
+}
+
+// Gets chat info for bot
+func (bot *Bot) getChatInfo(
+	msgInfo *messaging.MessageInfo,
+) *messaging.ChatInfo {
+	return messaging.NewChatInfo(
+		msgInfo, bot.History, bot.getChatValidator(),
+	)
+}
+
+// Starts bot
+func (bot *Bot) Start(ctx context.Context) {
+	// Prepare updates channel
+	u := tg.NewUpdate(0)
+	u.Timeout = 30
+	updates := bot.API.GetUpdatesChan(u)
+
+	// HANDLE updates until updates channel CLOSED or context DONE
+	defer log.Printf("Bot %s shut down gracefully", bot.UserName)
+	for {
+		select {
+		case update, ok := <-updates:
+			if !ok { // Check if updates channel closed
+				log.Printf(
+					"Bot %s update channel closed", bot.UserName,
+				)
+				return
+			}
+			// Proceed with handling in separate goroutine
+			go bot.handleUpdate(ctx, update)
+		case <-ctx.Done():
+			log.Printf(
+				"Bot %s received shutdown signal", bot.UserName,
+			)
+			return
+		}
+	}
+}
+
+// Handles update
+func (bot *Bot) handleUpdate(ctx context.Context, upd tg.Update) {
+	// Get message info and check
+	msgInfo := bot.getMessageInfo(upd.Message)
+	if msgInfo == nil || !msgInfo.IsTriggering {
+		return
+	}
+
+	// Get chat info and check
+	chatInfo := bot.getChatInfo(msgInfo)
+	if !chatInfo.IsAllowed {
+		return
+	}
+
+	// Handle message
+	bot.handleMessage(ctx, chatInfo)
+
+}
+
+// Handles message in chat context
+func (bot *Bot) handleMessage(
+	ctx context.Context,
+	chatInfo *messaging.ChatInfo,
+) {
+	log.Printf("[bot] %s got message", bot.UserName)
+
+	// Reload bot config
+	bot.mustReloadBotConf()
+
+	// Get memory
+	memory := memory.New(
+		chatInfo.History, bot.Contacts,
+		chatInfo.LastMsg, &bot.Settings.MemoryLimits,
+	)
+
+	// Create model
+	model := model.New(
+		bot.Conf, &bot.Settings.PromptTemplates, memory,
+		chatInfo.LastMsg, bot.FirstName, chatInfo.Title,
+	)
+
+	// Reply with history recording
+	replyInfo := bot.reply(ctx, model, chatInfo)
+
+	// Reflect on reply
+	chatInfo.LastMsg = replyInfo
+	bot.reflect(ctx, model, chatInfo)
+
+	// Send update signal
+	bot.UpdSignalCh <- struct{}{}
+}
+
+// Replies to message in chat
+func (bot *Bot) reply(
+	ctx context.Context,
+	model *model.Model,
+	chatInfo *messaging.ChatInfo,
+) *messaging.MessageInfo {
+	var replyInfo *messaging.MessageInfo
+
+	// Add last and reply messages to memory
+	chatInfo.History.AddTo(chatInfo.LastMsg)
+	defer chatInfo.History.AddTo(replyInfo)
+
+	// Type until reply
+	typingCtx, cancel := context.WithCancel(ctx)
+	go messaging.Type(typingCtx, bot.API, chatInfo)
+	defer cancel()
+
+	// React via model
+	text := model.React(ctx)
+
+	// Reply
+	reply := messaging.Reply(bot.API, chatInfo, text)
+	replyInfo = bot.getMessageInfo(reply)
+
+	return replyInfo
+}
+
+// Reflects on its reply
+func (bot *Bot) reflect(
+	ctx context.Context,
+	model *model.Model,
+	chatInfo *messaging.ChatInfo,
+) {
+	model.Reflect(ctx, chatInfo.LastMsg)
+}
+
+=== File: ./secret/secret.go ===
+package secret
+
+import (
+	"errors"
+	"log"
+	"os"
+	"strings"
+)
+
+const (
+	envVar = "API_KEYS_FILE"
+)
+
+// Secret errors
+var (
+	ErrGetEnvFailed = errors.New(
+		"Failed to get '" + envVar + "' environment variable",
+	)
+	ErrReadFileFailed = errors.New(
+		"Failed to read '%s' file",
+	)
+	ErrEmptyKeysStr = errors.New(
+		"Got empty keys string from '%s' file",
+	)
+	ErrZeroKeys = errors.New(
+		"Got zero keys from '%s' file",
+	)
+)
+
+// Loads API keys from environment variable or panics
+func MustLoadAPIKeys() []string {
+	// Get secret file from environment variable
+	secretFile, ok := os.LookupEnv(envVar)
+	if !ok {
+		log.Fatal(ErrGetEnvFailed)
+	}
+
+	// Read secret file
+	content, err := os.ReadFile(secretFile)
+	if err != nil {
+		log.Fatalf("%v: %v", ErrReadFileFailed, err)
+	}
+
+	// Get non-empty keys string
+	keysStr := string(content)
+	if keysStr == "" {
+		log.Fatal(ErrEmptyKeysStr)
+	}
+
+	// Get non-zero keys
+	keys := strings.Split(keysStr, "\n")
+	if len(keys) < 1 {
+		log.Fatal(ErrZeroKeys)
+	}
+
+	return keys
+}
+
+=== File: ./prompts/prompts.go ===
+package prompts
+
+import (
+	"fmt"
+
+	"tg-handler/conf"
+	"tg-handler/memory"
+)
+
+// messaging.MessageInfo abstraction
+type Message interface {
+	SenderProvider
+	LineProvider
+}
+
+type SenderProvider interface {
+	Sender() string
+}
+
+type LineProvider interface {
+	Line() string
+}
+
+// All prompts
+type Prompts struct {
+	Response string
+	Select   string
+	Note     string
+	Carma    string
+}
+
+// Formats all prompts incrementally
+func New(
+	conf *conf.BotConf,
+	templates *conf.PromptTemplates,
+	memory *memory.Memory,
+	msg Message,
+	botName string,
+	chatTitle string,
+) *Prompts {
+	var (
+		// Get templates
+		responseTemplate = templates.Response
+		selectTemplate   = templates.Select
+		noteTemplate     = templates.Note
+		carmaTemplate    = templates.Carma
+
+		// Get settings
+		candidateNum = conf.Main.CandidateNum
+		noteLimit    = memory.Limits.Note
+
+		// Get message data
+		userName = msg.Sender()
+		line     = msg.Line()
+
+		// Get names
+		names = NewNames(botName, userName)
+	)
+
+	return &Prompts{
+		Response: fmtResponsePrompt(
+			responseTemplate, memory, names, chatTitle,
+		),
+		Select: fmtSelectPrompt(
+			selectTemplate, memory, names, candidateNum,
+		),
+		Note: fmtNotePrompt(
+			noteTemplate, memory, names, line, noteLimit,
+		),
+		Carma: fmtCarmaPrompt(
+			carmaTemplate, memory, names, line,
+		),
+	}
+}
+
+// Names representation
+type Names struct {
+	Bot  string
+	User string
+}
+
+func NewNames(bot string, user string) *Names {
+	return &Names{
+		Bot:  bot,
+		User: user,
+	}
+}
+
+// Finalizes candidates prompt formatting (avoid importing the type)
+func FinFmtSelectPrompt[T fmt.Stringer](
+	prompt string,
+	candidates T,
+) string {
+	return fmt.Sprintf(prompt, candidates)
+}
+
+// Finalizes note prompt formatting
+func FinFmtNotePrompt(prompt string, botReply string) string {
+	return fmt.Sprintf(prompt, botReply)
+}
+
+// Finalizes carma prompt formatting
+func FinFmtCarmaPrompt(prompt string, botReply string) string {
+	return fmt.Sprintf(prompt, botReply)
+}
+
+// Formats response prompt
+func fmtResponsePrompt(
+	template string,
+	memory *memory.Memory,
+	names *Names,
+	chatTitle string,
+) string {
+	var botName = names.Bot
+
+	return fmt.Sprintf(template,
+		botName,
+		chatTitle,
+		memory.BotContacts,
+		memory.ReplyChainLines,
+		memory.ChatQueueLines,
+		names.Bot,
+	)
+}
+
+// Formats select prompt incrementally
+func fmtSelectPrompt(
+	template string,
+	memory *memory.Memory,
+	names *Names,
+	candidateNum int,
+) string {
+	var botName = names.Bot
+
+	return fmt.Sprintf(template,
+		botName,
+		memory.BotContacts,
+		memory.ChatQueueLines,
+		memory.ReplyChainLines,
+		"%s", // Response candidates placeholder
+		candidateNum,
+	)
+}
+
+// Formats note prompt incrementally
+func fmtNotePrompt(
+	template string,
+	memory *memory.Memory,
+	names *Names,
+	line string,
+	limit int,
+) string {
+	var (
+		botName  = names.Bot
+		userName = names.User
+		contact  = memory.BotContacts.Get(userName)
+	)
+
+	return fmt.Sprintf(template,
+		userName, botName, limit,
+		memory.BotContacts,
+		memory.ReplyChainLines,
+		memory.ChatQueueLines,
+		line,
+		"%s", // Final response placeholder
+		userName, contact.Note,
+		userName, limit,
+	)
+
+}
+
+// Formats carma prompt incrementally
+func fmtCarmaPrompt(
+	template string,
+	memory *memory.Memory,
+	names *Names,
+	line string,
+) string {
+	var (
+		botName  = names.Bot
+		userName = names.User
+		contact  = memory.BotContacts.Get(userName)
+	)
+
+	return fmt.Sprintf(template,
+		userName, botName,
+		memory.BotContacts,
+		memory.ReplyChainLines,
+		memory.ChatQueueLines,
+		line,
+		"%s", // Final response placeholder
+		userName, contact.Carma,
+	)
+}
+
+=== File: ./go.sum ===
+github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1 h1:wG8n/XJQ07TmjbITcGiUaOtXxdrINDz1b0J1w0SzqDc=
+github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1/go.mod h1:A2S0CWkNylc2phvKXWBBdD3K0iGnDBGbzRpISP2zBl8=
+github.com/joho/godotenv v1.5.1 h1:7eLL/+HRGLY0ldzfGMeQkb7vMd0as4CfYvUVzLqw0N0=
+github.com/joho/godotenv v1.5.1/go.mod h1:f4LDr5Voq0i2e/R5DDNOoa2zzDfwtkZa6DnEwAbqwq4=
+golang.org/x/text v0.31.0 h1:aC8ghyu4JhP8VojJ2lEHBnochRno1sgL6nEi9WGFGMM=
+golang.org/x/text v0.31.0/go.mod h1:tKRAlv61yKIjGGHX/4tP1LTbc13YSec1pxVEWXzfoeM=
+
+=== File: ./list.txt ===
+

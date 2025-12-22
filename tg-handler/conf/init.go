@@ -28,25 +28,34 @@ var (
 
 // Initialization config
 type InitConf struct {
-	KeysAPI          []string         `json:"keys_api"`
-	AllowedChats     AllowedChats     `json:"allowed_chats"`
-	Paths            Paths            `json:"paths"`
-	MemoryLimits     MemoryLimits     `json:"memory_limits"`
-	CleanerIntervals CleanerIntervals `json:"cleaner_intervals"`
-	PromptTemplates  PromptTemplates  `json:"prompt_templates"`
+	Paths           Paths           `json:"paths"`
+	CleanerSettings CleanerSettings `json:"cleaner_settings"`
+	BotSettings     BotSettings     `json:"bot_settings"`
+}
+
+// Paths
+type Paths struct {
+	History     string `json:"history"`
+	BotsConfDir string `json:"bots_conf_dir"`
+}
+
+// Cleaner settings
+type CleanerSettings struct {
+	MessageTTL      Duration `json:"msg_ttl"`
+	CleanupInterval Duration `json:"cleanup_interval"`
+}
+
+// Bot settings
+type BotSettings struct {
+	PromptTemplates PromptTemplates `json:"prompt_templates"`
+	AllowedChats    AllowedChats    `json:"allowed_chats"`
+	MemoryLimits    MemoryLimits    `json:"memory_limits"`
 }
 
 // Allowed chats
 type AllowedChats struct {
 	Usernames []string `json:"usernames"`
 	IDs       []int64  `json:"ids"`
-}
-
-// Memory limits
-type MemoryLimits struct {
-	ChatQueue  int `json:"chat_queue"`
-	ReplyChain int `json:"reply_chain"`
-	Note       int `json:"note"`
 }
 
 // Prompt templates
@@ -57,16 +66,11 @@ type PromptTemplates struct {
 	Carma    string `json:"carma"`
 }
 
-// Paths
-type Paths struct {
-	History string `json:"history"`
-	Bots    string `json:"bots"`
-}
-
-// Cleaner durations
-type CleanerIntervals struct {
-	MessageTTL Duration `json:"msg_ttl"`
-	Cleanup    Duration `json:"cleanup"`
+// Memory limits
+type MemoryLimits struct {
+	ChatQueue  int `json:"chat_queue"`
+	ReplyChain int `json:"reply_chain"`
+	Note       int `json:"note"`
 }
 
 type Duration time.Duration
