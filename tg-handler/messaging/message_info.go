@@ -7,25 +7,25 @@ import (
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
 
-// MessageInfo is recursive type.
-// We construct chat context and reply chain from it to keep history.
-// It implements LineChain (history/memory.go) providing Line() and PrevLine().
+// Recursive type.
+// Provides Line(), PrevLine() methods to construct reply chain.
+// Provides ID() and Sender() as methods.
 type MessageInfo struct {
-	Message      *tg.Message
-	sender       string       // UserName / FirstName (+LastName)
-	line         string       // "Sender: text"
-	IsTriggering bool         // Triggering messages get replied
-	IsVIP        bool         // VIP allows bypass checks
+	ID           int    // Message identifier
+	sender       string // UserName | FirstName (+LastName)
+	line         string // "Sender: text"
+	IsTriggering bool   // Is message meant to be replied
+	IsFromAdmin  bool   // Is message meant to be queued privately
+	Chat         *tg.Chat
 	prevMsg      *MessageInfo // Previous message info
 }
 
-// MessageInfo constructor relies on bot dictating how to detect admin, reply,
-// mentions; modify mentions. This dependency inversion enables to get suitable
-// Text and IsTriggering/IsVIP as direct message traits needed for validation.
+// Constructs message info by following bot procedures
+// on how to detect admin/reply/mentions; modify mentions.
 func NewMessageInfo(
 	bot *tg.BotAPI,
 	msg *tg.Message,
-	validateSender func(*tg.Message, string) bool,
+	detectAdmin func(*tg.Message, string) bool,
 	detectReply func(*tg.Message) bool,
 	detectMentions func(string) bool,
 	modifyMentions func(string) string,
@@ -46,27 +46,28 @@ func NewMessageInfo(
 		return nil
 	}
 
-	// Check if sender is admin (chat is allowed for their username)
-	isFromAdmin := validateSender(msg, sender)
+	// Get basic info
+	var (
+		isFromAdmin = detectAdmin(msg, sender)
+		isReplied   = detectReply(msg)
+		isMentioned = detectMentions(text)
+	)
 
-	// Check if replied
-	isReplied := detectReply(msg)
-
-	// Check if mentioned; modify mentions
-	isMentioned := detectMentions(text)
+	// Modify bot mentions if they exist
 	if isMentioned {
 		text = modifyMentions(text)
 	}
 
 	return &MessageInfo{
-		Message:      msg,
+		Chat:         msg.Chat,
+		ID:           msg.MessageID,
 		sender:       sender,
 		line:         getLine(sender, text),
 		IsTriggering: isFromAdmin || isReplied || isMentioned,
-		IsVIP:        isFromAdmin,
+		IsFromAdmin:  isFromAdmin,
 		prevMsg: NewMessageInfo(
 			bot, msg.ReplyToMessage,
-			validateSender,
+			detectAdmin,
 			detectReply,
 			detectMentions,
 			modifyMentions,
@@ -75,12 +76,12 @@ func NewMessageInfo(
 	}
 }
 
-// Line exposed (history.LineChain & model.Message implemented)
+// Line exposed
 func (m *MessageInfo) Line() string {
 	return m.line
 }
 
-// Previous line exposed (history.LineChain implemented)
+// Previous line exposed
 func (m *MessageInfo) PrevLine() string {
 	prevMsg := m.prevMsg
 	if prevMsg != nil {
@@ -89,17 +90,17 @@ func (m *MessageInfo) PrevLine() string {
 	return ""
 }
 
-// Sender exposed (model.Message implemented)
+// Sender exposed
 func (m *MessageInfo) Sender() string {
 	return m.sender
 }
 
-// Gets any name from UserName/FirstName (+LastName)
+// Gets UserName | FirstName (+LastName)
 func getSender(msg *tg.Message) string {
 	return msg.From.String()
 }
 
-// Gets any text from Text/Caption
+// Gets Text | Caption
 func getText(msg *tg.Message) (text string) {
 	if msg.Text != "" {
 		text = msg.Text
@@ -107,7 +108,6 @@ func getText(msg *tg.Message) (text string) {
 	if msg.Caption != "" {
 		text = msg.Caption
 	}
-
 	return text
 }
 

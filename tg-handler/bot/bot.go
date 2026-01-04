@@ -17,7 +17,8 @@ import (
 
 // Bot errors
 var (
-	ErrAuth = errors.New("[bot] authorization failed")
+	ErrAuth      = errors.New("[bot] authorization failed")
+	ErrFailReply = errors.New("[bot] failed to reply")
 )
 
 type Bot struct {
@@ -25,17 +26,18 @@ type Bot struct {
 	ID          int64
 	UserName    string
 	FirstName   string
-	Conf        *conf.BotConf     // Loaded from bot config
-	Settings    *conf.BotSettings // Loaded from init config
-	UpdSignalCh chan<- any
-	History     *history.SafeBotHistory
-	Contacts    *history.SafeBotContacts
+	Conf        *conf.BotConf            // Bot config
+	Settings    *conf.BotSettings        // Init config
+	ChatQueues  history.SharedChatQueues // Preinit, shared, r-only
+	UpdSignalCh chan<- any               // Signal update end
+	History     *history.SafeBotHistory  // Chat histories
+	Contacts    *history.SafeBotContacts // Chat agnostic contacts
 }
 
 func New(
 	keyAPI string,
 	iConf *conf.InitConf,
-	sh *history.SafeHistory,
+	h *history.History,
 	updSignalCh chan<- any,
 ) *Bot {
 	// Authorize as bot
@@ -49,18 +51,18 @@ func New(
 		userName  = b.Self.UserName
 		firstName = b.Self.FirstName
 	)
-	defer log.Printf("Authorized as %s", userName)
+	defer log.Printf("[bot] %s authorized", userName)
 
-	// Get _safe_ bot data
-	data, _ := sh.Get(userName)
-	history, contacts := data.Get()
+	// Get bot history and contacts
+	data := h.Bots.Get(userName)
+	history, contacts := data.History, data.Contacts
 
 	// Get bot config path
 	confPath := filepath.Join(
 		iConf.Paths.BotsConfDir, userName+".json",
 	)
-	// Load bot config
-	conf := conf.MustLoadBotConf(confPath)
+	// Get bot config
+	botConf := conf.MustLoadBotConf(confPath)
 
 	// Return bot instance via pointer
 	return &Bot{
@@ -68,8 +70,9 @@ func New(
 		ID:          b.Self.ID,
 		UserName:    userName,
 		FirstName:   firstName,
-		Conf:        conf,
+		Conf:        botConf,
 		Settings:    &iConf.BotSettings,
+		ChatQueues:  h.SharedChatQueues,
 		UpdSignalCh: updSignalCh,
 		History:     history,
 		Contacts:    contacts,
@@ -82,10 +85,10 @@ func (bot *Bot) getMessageInfo(
 ) *messaging.MessageInfo {
 	return messaging.NewMessageInfo(
 		bot.API, msg,
-		bot.getSenderValidator(),
+		bot.getAdminDetector(),
 		bot.getReplyDetector(),
 		bot.getMentionDetector(),
-		bot.getMentionHumanizer(),
+		bot.getMentionModifier(),
 		1,
 	)
 }
@@ -95,7 +98,10 @@ func (bot *Bot) getChatInfo(
 	msgInfo *messaging.MessageInfo,
 ) *messaging.ChatInfo {
 	return messaging.NewChatInfo(
-		msgInfo, bot.History, bot.getChatValidator(),
+		msgInfo,
+		bot.History,
+		bot.ChatQueues, // Shared chat queues for public chats
+		bot.getChatValidator(),
 	)
 }
 
@@ -106,22 +112,21 @@ func (bot *Bot) Start(ctx context.Context) {
 	u.Timeout = 30
 	updates := bot.API.GetUpdatesChan(u)
 
-	// HANDLE updates until updates channel CLOSED or context DONE
-	defer log.Printf("Bot %s shut down gracefully", bot.UserName)
+	// Handle updates until updates channel CLOSED or context DONE
+	defer log.Printf("[bot] %s shut down gracefully", bot.UserName)
 	for {
 		select {
 		case update, ok := <-updates:
 			if !ok { // Check if updates channel closed
 				log.Printf(
-					"Bot %s update channel closed", bot.UserName,
+					"[bot] %s update channel closed", bot.UserName,
 				)
 				return
 			}
-			// Proceed with handling in separate goroutine
-			go bot.handleUpdate(ctx, update)
+			bot.handleUpdate(ctx, update)
 		case <-ctx.Done():
 			log.Printf(
-				"Bot %s received shutdown signal", bot.UserName,
+				"[bot] %s received shutdown signal", bot.UserName,
 			)
 			return
 		}
@@ -130,21 +135,26 @@ func (bot *Bot) Start(ctx context.Context) {
 
 // Handles update
 func (bot *Bot) handleUpdate(ctx context.Context, upd tg.Update) {
-	// Get message info and check
+	// Get message info and check if valid
 	msgInfo := bot.getMessageInfo(upd.Message)
-	if msgInfo == nil || !msgInfo.IsTriggering {
+	if msgInfo == nil {
 		return
 	}
 
-	// Get chat info and check
+	// Get chat info and check if allowed
 	chatInfo := bot.getChatInfo(msgInfo)
 	if !chatInfo.IsAllowed {
 		return
 	}
 
-	// Handle message
-	bot.handleMessage(ctx, chatInfo)
+	// Check if not triggered
+	if !chatInfo.LastMsg.IsTriggering {
+		// Save message anyway
+		chatInfo.History.AddToChatQueue(chatInfo.LastMsg)
+		return
+	}
 
+	bot.handleMessage(ctx, chatInfo)
 }
 
 // Handles message in chat context
@@ -153,9 +163,6 @@ func (bot *Bot) handleMessage(
 	chatInfo *messaging.ChatInfo,
 ) {
 	log.Printf("[bot] %s got message", bot.UserName)
-
-	// Reload bot config
-	bot.mustReloadBotConf()
 
 	// Get memory
 	memory := memory.New(
@@ -169,28 +176,29 @@ func (bot *Bot) handleMessage(
 		chatInfo.LastMsg, bot.FirstName, chatInfo.Title,
 	)
 
-	// Reply with history recording
-	replyInfo := bot.reply(ctx, model, chatInfo)
+	// Add message to history and proceed in separate goroutine
+	chatInfo.History.AddToBoth(chatInfo.LastMsg)
+	go func() {
+		// Reply
+		replyInfo := bot.reply(ctx, model, chatInfo)
+		chatInfo.History.AddToBoth(replyInfo)
 
-	// Reflect on reply
-	chatInfo.LastMsg = replyInfo
-	bot.reflect(ctx, model, chatInfo)
+		// Reflect on reply
+		chatInfo.LastMsg = replyInfo
+		bot.reflect(ctx, model, chatInfo)
 
-	// Send update signal
-	bot.UpdSignalCh <- struct{}{}
+		// Send update signal
+		bot.UpdSignalCh <- struct{}{}
+	}()
 }
 
-// Replies to message in chat
+// Replies to message in chat, return reply message info
 func (bot *Bot) reply(
 	ctx context.Context,
 	model *model.Model,
 	chatInfo *messaging.ChatInfo,
 ) *messaging.MessageInfo {
 	var replyInfo *messaging.MessageInfo
-
-	// Add last and reply messages to memory
-	chatInfo.History.AddTo(chatInfo.LastMsg)
-	defer chatInfo.History.AddTo(replyInfo)
 
 	// Type until reply
 	typingCtx, cancel := context.WithCancel(ctx)

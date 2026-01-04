@@ -7,25 +7,16 @@ import (
 	"tg-handler/memory"
 )
 
-// messaging.MessageInfo abstraction
-type Message interface {
-	SenderProvider
-	LineProvider
-}
-
+// Abstract sender provider
 type SenderProvider interface {
 	Sender() string
 }
 
-type LineProvider interface {
-	Line() string
-}
-
-// All prompts
+// All needed prompts
 type Prompts struct {
 	Response string
 	Select   string
-	Note     string
+	Tags     string
 	Carma    string
 }
 
@@ -34,7 +25,7 @@ func New(
 	conf *conf.BotConf,
 	templates *conf.PromptTemplates,
 	memory *memory.Memory,
-	msg Message,
+	senderP SenderProvider,
 	botName string,
 	chatTitle string,
 ) *Prompts {
@@ -42,19 +33,16 @@ func New(
 		// Get templates
 		responseTemplate = templates.Response
 		selectTemplate   = templates.Select
-		noteTemplate     = templates.Note
+		tagsTemplate     = templates.Tags
 		carmaTemplate    = templates.Carma
 
 		// Get settings
 		candidateNum = conf.Main.CandidateNum
-		noteLimit    = memory.Limits.Note
-
-		// Get message data
-		userName = msg.Sender()
-		line     = msg.Line()
+		tagsLimit    = memory.Limits.Tags
 
 		// Get names
-		names = NewNames(botName, userName)
+		userName = senderP.Sender()
+		names    = NewNames(botName, userName)
 	)
 
 	return &Prompts{
@@ -64,16 +52,12 @@ func New(
 		Select: fmtSelectPrompt(
 			selectTemplate, memory, names, candidateNum,
 		),
-		Note: fmtNotePrompt(
-			noteTemplate, memory, names, line, noteLimit,
-		),
-		Carma: fmtCarmaPrompt(
-			carmaTemplate, memory, names, line,
-		),
+		Tags:  fmtTagsPrompt(tagsTemplate, memory, names, tagsLimit),
+		Carma: fmtCarmaPrompt(carmaTemplate, memory, names),
 	}
 }
 
-// Names representation
+// Names type
 type Names struct {
 	Bot  string
 	User string
@@ -86,7 +70,7 @@ func NewNames(bot string, user string) *Names {
 	}
 }
 
-// Finalizes candidates prompt formatting (avoid importing the type)
+// Finalizes candidates prompt formatting (avoid dependency on type)
 func FinFmtSelectPrompt[T fmt.Stringer](
 	prompt string,
 	candidates T,
@@ -94,8 +78,8 @@ func FinFmtSelectPrompt[T fmt.Stringer](
 	return fmt.Sprintf(prompt, candidates)
 }
 
-// Finalizes note prompt formatting
-func FinFmtNotePrompt(prompt string, botReply string) string {
+// Finalizes tags prompt formatting
+func FinFmtTagsPrompt(prompt string, botReply string) string {
 	return fmt.Sprintf(prompt, botReply)
 }
 
@@ -114,12 +98,7 @@ func fmtResponsePrompt(
 	var botName = names.Bot
 
 	return fmt.Sprintf(template,
-		botName,
-		chatTitle,
-		memory.BotContacts,
-		memory.ReplyChainLines,
-		memory.ChatQueueLines,
-		names.Bot,
+		botName, chatTitle, memory, names.Bot,
 	)
 }
 
@@ -134,47 +113,18 @@ func fmtSelectPrompt(
 
 	return fmt.Sprintf(template,
 		botName,
-		memory.BotContacts,
-		memory.ChatQueueLines,
-		memory.ReplyChainLines,
+		memory,
 		"%s", // Response candidates placeholder
 		candidateNum,
 	)
 }
 
-// Formats note prompt incrementally
-func fmtNotePrompt(
+// Formats tags prompt incrementally
+func fmtTagsPrompt(
 	template string,
 	memory *memory.Memory,
 	names *Names,
-	line string,
-	limit int,
-) string {
-	var (
-		botName  = names.Bot
-		userName = names.User
-		contact  = memory.BotContacts.Get(userName)
-	)
-
-	return fmt.Sprintf(template,
-		userName, botName, limit,
-		memory.BotContacts,
-		memory.ReplyChainLines,
-		memory.ChatQueueLines,
-		line,
-		"%s", // Final response placeholder
-		userName, contact.Note,
-		userName, limit,
-	)
-
-}
-
-// Formats carma prompt incrementally
-func fmtCarmaPrompt(
-	template string,
-	memory *memory.Memory,
-	names *Names,
-	line string,
+	lim int,
 ) string {
 	var (
 		botName  = names.Bot
@@ -184,10 +134,29 @@ func fmtCarmaPrompt(
 
 	return fmt.Sprintf(template,
 		userName, botName,
-		memory.BotContacts,
-		memory.ReplyChainLines,
-		memory.ChatQueueLines,
-		line,
+		memory,
+		"%s", // Final response placeholder
+		userName, contact.Tags,
+		userName, lim,
+	)
+
+}
+
+// Formats carma prompt incrementally
+func fmtCarmaPrompt(
+	template string,
+	memory *memory.Memory,
+	names *Names,
+) string {
+	var (
+		botName  = names.Bot
+		userName = names.User
+		contact  = memory.BotContacts.Get(userName)
+	)
+
+	return fmt.Sprintf(template,
+		userName, botName,
+		memory,
 		"%s", // Final response placeholder
 		userName, contact.Carma,
 	)

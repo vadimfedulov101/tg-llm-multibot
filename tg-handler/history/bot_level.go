@@ -11,40 +11,20 @@ const (
 	botContactsCap = 256
 )
 
-// (SAFE) BOT DATA
+// BOT DATA
 
-type SafeBotData struct {
-	mu   sync.RWMutex
-	Data BotData
-}
-
-func NewSafeBotData() *SafeBotData {
-	return &SafeBotData{
-		Data: *NewBotData(),
-	}
-}
-
+// Bot data consists from bot history, chat agnostic bot contacts.
+// No pointer swap occures after initialization, no mutex needed.
 type BotData struct {
-	History  SafeBotHistory
-	Contacts SafeBotContacts
+	History  *SafeBotHistory  // Read-only
+	Contacts *SafeBotContacts // Read-only
 }
 
 func NewBotData() *BotData {
 	return &BotData{
-		History:  *NewSafeBotHistory(),
-		Contacts: *NewSafeBotContacts(),
+		History:  NewSafeBotHistory(),
+		Contacts: NewSafeBotContacts(),
 	}
-}
-
-// SAFE BOT DATA
-
-func (sbd *SafeBotData) Get() (*SafeBotHistory, *SafeBotContacts) {
-	// Ensure secure access
-	sbd.mu.RLock()
-	defer sbd.mu.RUnlock()
-
-	data := &sbd.Data
-	return &data.History, &data.Contacts
 }
 
 // BOT HISTORY BRANCH
@@ -56,15 +36,15 @@ type SafeBotHistory struct {
 
 func NewSafeBotHistory() *SafeBotHistory {
 	return &SafeBotHistory{
-		History: *NewBotHistory(),
+		History: NewBotHistory(),
 	}
 }
 
-type BotHistory map[int64]*SafeChatHistory
+type BotHistory map[int64]*ChatHistory
 
-func NewBotHistory() *BotHistory {
+func NewBotHistory() BotHistory {
 	h := make(BotHistory, botHistoryCap)
-	return &h
+	return h
 }
 
 // BOT CONTACTS BRANCH
@@ -76,7 +56,7 @@ type SafeBotContacts struct {
 
 func NewSafeBotContacts() *SafeBotContacts {
 	return &SafeBotContacts{
-		Contacts: *NewBotContacts(),
+		Contacts: NewBotContacts(),
 	}
 }
 
@@ -91,18 +71,24 @@ func (sbcs *SafeBotContacts) String() string {
 
 type BotContacts map[string]BotContact
 
-func NewBotContacts() *BotContacts {
+func NewBotContacts() BotContacts {
 	bc := make(BotContacts, botContactsCap)
-	return &bc
+	return bc
 }
 
 func (bcs BotContacts) String() string {
 	var sb strings.Builder
 
+	// Describe contacts
+	sb.WriteString("Contacts (users known to you):\n")
+
+	// Handle no contacts
 	if bcs == nil {
-		return "<no contacts>"
+		sb.WriteString("<no contacts>")
+		return sb.String()
 	}
 
+	// Handle contacts
 	for userName, contact := range bcs {
 		sb.WriteString(
 			fmt.Sprintf("user: %s\n%s\n", userName, contact),
@@ -116,32 +102,33 @@ func (bcs BotContacts) String() string {
 
 type BotContact struct {
 	Carma int
-	Note  string
+	Tags  string
 }
 
 func (bc BotContact) String() string {
-	return fmt.Sprintf(
-		"carma: %d\nnote:\n%s\n\n", bc.Carma, bc.Note,
-	)
+	return fmt.Sprintf("carma: %d\ntags: %s\n", bc.Carma, bc.Tags)
 }
 
 // METHODS
 
 // BOT HISTORY BRANCH
 
-// Gets safe chat history and preexistence status
-func (sbh *SafeBotHistory) Get(cid int64) (*SafeChatHistory, bool) {
-	// Return existing chat history
+// Gets safe chat history and status
+func (sbh *SafeBotHistory) Get(
+	cid int64,
+	scq *SafeChatQueue, // Preinit for public, nil for private chats
+) (*ChatHistory, bool) {
+	// Happy path: return existing chat history
 	if chatHistory, ok := sbh.get(cid); ok {
 		return chatHistory, true
 	}
 
-	// Return new chat history
-	return sbh.init(cid), false
+	// Unhappy path: return new chat history
+	return sbh.init(cid, scq), false
 
 }
 
-func (sbh *SafeBotHistory) get(cid int64) (*SafeChatHistory, bool) {
+func (sbh *SafeBotHistory) get(cid int64) (*ChatHistory, bool) {
 	// Ensure secure access
 	sbh.mu.RLock()
 	defer sbh.mu.RUnlock()
@@ -150,19 +137,21 @@ func (sbh *SafeBotHistory) get(cid int64) (*SafeChatHistory, bool) {
 	return chatHistory, ok
 }
 
-func (sbh *SafeBotHistory) init(cid int64) *SafeChatHistory {
+func (sbh *SafeBotHistory) init(
+	cid int64,
+	scq *SafeChatQueue, // Preinit for public, nil for private chats
+) *ChatHistory {
 	// Ensure secure access
 	sbh.mu.Lock()
 	defer sbh.mu.Unlock()
 
-	// No double check of initialization after lock release
-	// as there is one goroutine per bot & cleaner skips new data
-	// if chatHistory, ok := sbh.History[cid]; ok {
-	//	return chatHistory
-	// }
+	// Double check if init after lock release
+	if chatHistory, ok := sbh.History[cid]; ok {
+		return chatHistory
+	}
 
-	// Return new chat histroy
-	chatHistory := NewSafeChatHistory()
+	// Return new chat history
+	chatHistory := NewChatHistory(scq)
 	sbh.History[cid] = chatHistory
 	return chatHistory
 }

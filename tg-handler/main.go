@@ -30,26 +30,24 @@ func main() {
 	iConf := conf.MustLoadInitConf(InitConfPath)
 
 	// Get safe history
-	h := history.MustLoadHistory(iConf.Paths.History)
-	sh := history.NewSafeHistory(h)
+	h := history.MustLoadHistory(
+		iConf.Paths.History,
+		// Preinitialize SafeChatQueues with allowed chat IDs
+		iConf.BotSettings.AllowedChats.IDs,
+	)
 
 	// Start cleaner and bots
-	wg, updateCh := startBots(ctx, iConf, apiKeys, sh)
+	wg, updateCh := startBots(ctx, iConf, apiKeys, h)
 
 	// Await termination signal
 	<-ctx.Done()
-	log.Println("Shutting down...")
+	log.Println("[main] shutting down...")
 
 	// Await bots shutdown
-	log.Println("Waiting for bot services to shutdown...")
+	log.Println("[main] awaiting services to shutdown...")
 	wg.Wait()
 	close(updateCh)
-	log.Println("All bot services shutdown gracefully")
-
-	// Save history (maybe no need in final save?)
-	// log.Println("Saving history...")
-	// sh.Save(iConf.Paths.History)
-	// log.Println("History saved")
+	log.Println("[main] all services shutdown gracefully")
 }
 
 // Starts bots with API keys
@@ -57,7 +55,7 @@ func startBots(
 	ctx context.Context,
 	iConf *conf.InitConf,
 	apiKeys []string,
-	sh *history.SafeHistory,
+	h *history.History,
 ) (*sync.WaitGroup, chan any) {
 	var (
 		wg       sync.WaitGroup
@@ -70,7 +68,7 @@ func startBots(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sh.Cleaner(ctx, historyPath, &iConf.CleanerSettings)
+		h.Cleaner(ctx, historyPath, &iConf.CleanerSettings)
 	}()
 
 	// Start all bots
@@ -78,7 +76,7 @@ func startBots(
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			bot := bot.New(apiKey, iConf, sh, updateCh)
+			bot := bot.New(apiKey, iConf, h, updateCh)
 			bot.Start(ctx)
 		}()
 	}
@@ -87,7 +85,7 @@ func startBots(
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sh.Saver(ctx, historyPath, updateCh)
+		h.Saver(ctx, historyPath, updateCh)
 	}()
 
 	return &wg, updateCh

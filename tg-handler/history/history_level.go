@@ -1,114 +1,126 @@
 package history
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"sync"
+
+	"google.golang.org/protobuf/proto"
+
+	"tg-handler/history/pb"
 )
 
-type SafeHistory struct {
-	mu      sync.RWMutex
-	History History
+// History consists from bot histories, bot-agnostic shared queues.
+// No pointer swap occures after initialization, no mutex needed.
+type History struct {
+	Bots             *SafeBotsHistory // Read-only (secured inside)
+	SharedChatQueues SharedChatQueues // Read-only
 }
 
-func NewSafeHistory(h *History) *SafeHistory {
-	return &SafeHistory{
-		History: *h,
+func NewHistory(cids []int64) *History {
+	return &History{
+		Bots:             NewSafeBotsHistory(),
+		SharedChatQueues: NewSharedChatQueues(cids),
 	}
 }
 
-type History map[string]*SafeBotData
+// Safe bot history consists from history read/written concurrently
+// by bots, cleaner, so mutex needed.
+type SafeBotsHistory struct {
+	mu      sync.RWMutex
+	History BotsHistory
+}
+
+func NewSafeBotsHistory() *SafeBotsHistory {
+	return &SafeBotsHistory{
+		History: make(BotsHistory),
+	}
+}
+
+// Bot data storage
+type BotsHistory map[string]*BotData
+
+// Shared chat queues for all allowed public chats,
+// implicitly used to set chat queue on chat level if public
+// to avoid memory duplication and preserve simplicity for bots.
+type SharedChatQueues map[int64]*SafeChatQueue
+
+func NewSharedChatQueues(cids []int64) SharedChatQueues {
+	cq := make(SharedChatQueues, len(cids))
+	for _, cid := range cids {
+		cq[cid] = NewSafeChatQueue(true)
+	}
+	return cq
+}
 
 // History errors
 var (
-	ErrGetPathFailed   = errors.New("[history] failed to get history path")
-	ErrOpenFailed      = errors.New("[history] failed to open history file")
-	ErrReadFailed      = errors.New("[history] failed to read history file")
-	ErrWriteFailed     = errors.New("[history] failed to write history file")
-	ErrMarshalFailed   = errors.New("[history] failed to marshal history file")
-	ErrUnmarshalFailed = errors.New("[history] failed to unmarshal history file")
+	ErrGetPathFailed = errors.New(
+		"[history] failed to get history path",
+	)
+	ErrReadFailed = errors.New(
+		"[history] failed to read history file",
+	)
+	ErrWriteFailed = errors.New(
+		"[history] failed to write history file",
+	)
+	ErrMarshalFailed = errors.New(
+		"[history] failed to marshal history file",
+	)
+	ErrUnmarshalFailed = errors.New(
+		"[history] failed to unmarshal history file",
+	)
 )
 
-// UNSAFE! Loads history as shared once
-func MustLoadHistory(source string) *History {
+// UNSAFE! Loads history or panics
+func MustLoadHistory(source string, cids []int64) *History {
 	// Check if source is empty
 	if source == "" {
 		log.Panicf("%v", ErrGetPathFailed)
 	}
 
-	// Start with empty history
-	history := make(History)
-
-	// Open/create file
-	file, err := os.OpenFile(source, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		log.Panicf("%v: %v", ErrOpenFailed, err)
-	}
-	defer file.Close()
-
-	// Read JSON data from file
-	data, err := io.ReadAll(file)
-	if err != nil {
+	// Try to read file
+	data, err := os.ReadFile(source)
+	if os.IsNotExist(err) {
+		// Return new if file doesn't exist
+		return NewHistory(cids)
+	} else if err != nil {
 		log.Panicf("%v: %v", ErrReadFailed, err)
 	}
 
-	// Decode JSON data to history
-	if err := json.Unmarshal(data, &history); err != nil {
+	// Unmarshal
+	var protoRoot pb.RootHistory
+	if err := proto.Unmarshal(data, &protoRoot); err != nil {
 		log.Printf("%v: %v", ErrUnmarshalFailed, err)
 		log.Printf("[memory] opting to empty history")
+		return NewHistory(cids)
 	}
+
+	// Convert back to internal structure
+	history := fromProto(&protoRoot, cids)
 
 	log.Println("[memory] history loaded")
-	return &history
-}
-
-// Gets safe chat history for cleaning
-func (sh *SafeHistory) GetChatHistory(
-	botName string,
-	chatID int64,
-) (*SafeChatHistory, bool) {
-	// Get safe bot data
-	sbd, ok := sh.Get(botName)
-	if !ok {
-		return nil, false
-	}
-
-	// Get only safe bot history
-	sbh, _ := sbd.Get()
-
-	// Get safe chat history
-	sch, ok := sbh.Get(chatID)
-	return sch, ok
+	return history
 }
 
 // Saves history
-func (sh *SafeHistory) Save(dest string) error {
-	// Ensure secure access
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
+func (h *History) Save(dest string) error {
+	h.lock()
+	defer h.unlock()
 
-	// Open/create file
-	file, err := os.OpenFile(
-		dest, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644,
-	)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrOpenFailed, err)
-	}
-	defer file.Close()
+	// Convert to Proto struct
+	protoRoot := h.toProto()
 
-	// Encode history to JSON data
-	data, err := json.Marshal(sh.History)
+	// Marshal to binary
+	data, err := proto.Marshal(protoRoot)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrMarshalFailed, err)
 	}
 
-	// Write JSON data to file
-	_, err = file.Write(data)
-	if err != nil {
+	// Write file
+	if err := os.WriteFile(dest, data, 0644); err != nil {
 		return fmt.Errorf("%w: %v", ErrWriteFailed, err)
 	}
 
@@ -116,38 +128,118 @@ func (sh *SafeHistory) Save(dest string) error {
 	return nil
 }
 
-// Gets safe bot data and its preexistence status
-func (sh *SafeHistory) Get(botName string) (*SafeBotData, bool) {
-	// Return existing bot data
-	if botData, ok := sh.get(botName); ok {
-		return botData, true
+// Gets bot data
+func (sbh *SafeBotsHistory) Get(botName string) *BotData {
+	// Happy path: Return existing bot data
+	if botData, ok := sbh.get(botName); ok {
+		return botData
 	}
 
-	// Return new bot data
-	return sh.init(botName), false
+	// Unhappy path: Return new bot data
+	return sbh.init(botName)
 }
 
-func (sh *SafeHistory) get(botName string) (*SafeBotData, bool) {
+// Return existing bot data with status
+func (sbh *SafeBotsHistory) get(botName string) (*BotData, bool) {
 	// Ensure secure access
-	sh.mu.RLock()
-	defer sh.mu.RUnlock()
+	sbh.mu.RLock()
+	defer sbh.mu.RUnlock()
 
-	botData, ok := sh.History[botName]
+	botData, ok := sbh.History[botName]
 	return botData, ok
 }
 
-func (sh *SafeHistory) init(botName string) *SafeBotData {
+// Create new bot data
+func (sbh *SafeBotsHistory) init(botName string) *BotData {
 	// Ensure secure access
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
+	sbh.mu.Lock()
+	defer sbh.mu.Unlock()
 
-	// Double check initialization after lock release
-	if botData, ok := sh.History[botName]; ok {
+	// Double check if init after lock release
+	if botData, ok := sbh.History[botName]; ok {
 		return botData
 	}
 
 	// Return new bot data
-	botData := NewSafeBotData()
-	sh.History[botName] = botData
+	botData := NewBotData()
+	sbh.History[botName] = botData
 	return botData
+}
+
+// Locks history in cascade
+func (h *History) lock() {
+	var (
+		scqs = h.SharedChatQueues
+		bots = h.Bots
+	)
+
+	// Firstly lock SHARED chat queues
+	for _, scq := range scqs {
+		scq.mu.Lock()
+	}
+
+	// Secondly lock LOCAL chat queues and reply chains
+	bots.mu.Lock()
+	for _, botData := range bots.History {
+		var (
+			history  = botData.History
+			contacts = botData.Contacts
+		)
+		history.mu.Lock()
+		contacts.mu.Lock()
+
+		for _, sch := range history.History {
+			var (
+				chatQueue   = sch.ChatQueue
+				replyChains = sch.ReplyChains
+			)
+
+			// Lock chat queue if local
+			if !chatQueue.IsShared {
+				chatQueue.mu.Lock()
+			}
+
+			// Lock reply chains (always local)
+			replyChains.mu.Lock()
+		}
+	}
+}
+
+// Unlocks history in cascade
+func (h *History) unlock() {
+	var (
+		scqs = h.SharedChatQueues
+		bots = h.Bots
+	)
+
+	// Firstly lock SHARED chat queues
+	for _, scq := range scqs {
+		scq.mu.Unlock()
+	}
+
+	// Secondly lock LOCAL chat queues and reply chains
+	bots.mu.Unlock()
+	for _, botData := range bots.History {
+		var (
+			history  = botData.History
+			contacts = botData.Contacts
+		)
+		history.mu.Unlock()
+		contacts.mu.Unlock()
+
+		for _, sch := range history.History {
+			var (
+				chatQueue   = sch.ChatQueue
+				replyChains = sch.ReplyChains
+			)
+
+			// Lock chat queue if local
+			if !chatQueue.IsShared {
+				chatQueue.mu.Unlock()
+			}
+
+			// Lock reply chains (always local)
+			replyChains.mu.Unlock()
+		}
+	}
 }

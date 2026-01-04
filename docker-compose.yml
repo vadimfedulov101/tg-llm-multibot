@@ -5,10 +5,10 @@ services:
       context: .
       dockerfile: tg-handler/Dockerfile
     environment:
-      API_KEYS_FILE: /run/secrets/api_keys.txt
+      API_KEYS_FILE: /run/secrets/api_keys
     volumes:
       - ./confs:/app/confs:ro
-      - ./.history:/app/history
+      - ./history:/app/history 
     networks:
       - ollama-network
     secrets:

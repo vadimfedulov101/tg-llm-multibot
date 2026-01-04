@@ -5,17 +5,37 @@ import (
 )
 
 // Cuts hash tags to limit
-func cutHashTags(note string, limit int) string {
-	// Get hashtags slice
-	hashtags := strings.Fields(note)
+func cleanTags(tags string, limit int) string {
+	// Get raw tags slice
+	rawTags := strings.Fields(tags)
 
-	// Cut hashtags slice if longer than limit
-	if len(hashtags) > limit {
-		hashtags = hashtags[:limit]
+	// Set for deduplication
+	seen := make(map[string]bool)
+	var cleanTags []string
+
+	// Clean tags
+	for _, tag := range rawTags {
+		// Skip garbage
+		if !strings.HasPrefix(tag, "#") {
+			continue
+		}
+		// Check duplicate
+		if seen[tag] {
+			continue
+		}
+
+		// Add clean tag
+		seen[tag] = true
+		cleanTags = append(cleanTags, tag)
+
+		// Stop if limit reached
+		if len(cleanTags) >= limit {
+			break
+		}
 	}
 
-	// Return joined hashtags string
-	return strings.Join(hashtags, " ")
+	// Return clean tags
+	return strings.Join(cleanTags, " ")
 }
 
 // Removes noise
@@ -26,25 +46,21 @@ func trimNoise(s string) string {
 	return s
 }
 
-// Removes <think>...</think> blocks from string
+// Smartly removes thinking blocks
 func trimThinkingTags(s string) string {
 	startTag := "<think>"
 	endTag := "</think>"
 
-	for {
-		startIdx := strings.Index(s, startTag)
-		if startIdx == -1 {
-			break
-		}
-
-		endIdx := strings.Index(s, endTag)
-		if endIdx == -1 {
-			break
-		}
-
-		// Remove the thinking block including tags
-		s = s[:startIdx] + s[endIdx+len(endTag):]
+	// PRIORITY: "Final Answer" comes AFTER the thought process.
+	if endIdx := strings.LastIndex(s, endTag); endIdx != -1 {
+		return s[endIdx+len(endTag):]
 	}
 
+	// FALLBACK: "Final Answer" comes BEFORE the thought process.
+	if startIdx := strings.Index(s, startTag); startIdx != -1 {
+		return s[:startIdx]
+	}
+
+	// No tags found
 	return s
 }

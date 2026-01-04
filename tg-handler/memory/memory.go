@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"fmt"
 	"strings"
 
 	"tg-handler/conf"
@@ -21,24 +22,26 @@ type prevLineProvider interface {
 	PrevLine() string
 }
 
-// Types are in `memory/types.go`
-type Memory = struct {
-	ChatQueueLines  ChatQueueLines           // Last message lines
-	ReplyChainLines ReplyChainLines          // Previous reply lines
-	BotContacts     *history.SafeBotContacts // User carmas/personas
-	Limits          *conf.MemoryLimits       // Limits metadata
+type Memory struct {
+	ChatQueueLines  ChatQueueLines           // Last messages
+	ReplyChainLines ReplyChainLines          // Previous messages
+	BotContacts     *history.SafeBotContacts // Users known
+	Limits          *conf.MemoryLimits       // Limits as metadata
 }
 
-// Constructs memory from safe chat history and safe bot contacts
-// with memory limits.
+// Constructs memory from chat history and limits,
+// also keeping safe bot contacts for reading and modifying.
 func New(
-	sch *history.SafeChatHistory,
+	ch *history.ChatHistory,
 	sbc *history.SafeBotContacts,
 	lc LineChain,
 	lims *conf.MemoryLimits,
 ) *Memory {
-	// Get chat queue and reply chains
-	chatQueue, replyChains := sch.Unpack()
+	// Get memory data
+	var (
+		chatQueue   = ch.ChatQueue
+		replyChains = ch.ReplyChains
+	)
 
 	// Get memory limits
 	var (
@@ -46,39 +49,45 @@ func New(
 		replyChainLim = lims.ReplyChain
 	)
 
-	// Return memory via pointer
 	return &Memory{
+		BotContacts:    sbc,
 		ChatQueueLines: chatQueue.GetLines(chatQueueLim),
 		ReplyChainLines: replyChains.GetLines(
 			lc.PrevLine(), lc.Line(), replyChainLim,
 		),
-		BotContacts: sbc,
-		Limits:      lims,
+		Limits: lims,
 	}
 }
 
-// Memory
+func (m *Memory) String() string {
+	return fmt.Sprintf(
+		"%s\n\n%s\n\n%s",
+		m.BotContacts, m.ChatQueueLines, m.ReplyChainLines,
+	)
+}
+
+// Memory types
 type (
 	ChatQueueLines  []string
 	ReplyChainLines []string
 )
 
-// Chat queue lines as string
-func (cq ChatQueueLines) String() string {
+func (cqls ChatQueueLines) String() string {
 	var sb strings.Builder
-	for _, line := range cq {
-		sb.WriteString(line)
-		sb.WriteByte('\n')
-	}
+
+	// Describe and present chat queue
+	sb.WriteString("Chat Queue (last messages):\n")
+	sb.WriteString(strings.Join(cqls, "\n"))
+
 	return sb.String()
 }
 
-// Reply chain lines as string
-func (rc ReplyChainLines) String() string {
+func (rcls ReplyChainLines) String() string {
 	var sb strings.Builder
-	for _, line := range rc {
-		sb.WriteString(line)
-		sb.WriteByte('\n')
-	}
+
+	// Describe and present reply chain
+	sb.WriteString("Reply Chain (previous messages):\n")
+	sb.WriteString(strings.Join(rcls, "\n"))
+
 	return sb.String()
 }

@@ -5,17 +5,10 @@ import (
 	"strings"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-
-	"tg-handler/conf"
 )
 
-// Reloads bot config or panics
-func (bot *Bot) mustReloadBotConf() {
-	bot.Conf = conf.MustLoadBotConf(bot.confPath)
-}
-
-// Gets sender validator for bot
-func (bot *Bot) getSenderValidator() func(*tg.Message, string) bool {
+// Gets admin identifier for bot
+func (bot *Bot) getAdminDetector() func(*tg.Message, string) bool {
 	admins := bot.Settings.AllowedChats.Usernames
 
 	// Identifies if private sender is admin
@@ -57,8 +50,8 @@ func (bot *Bot) getMentionDetector() func(string) bool {
 	}
 }
 
-// Gets mention humanizer for bot
-func (bot *Bot) getMentionHumanizer() func(string) string {
+// Gets mention modifier for bot
+func (bot *Bot) getMentionModifier() func(string) string {
 	// Substitutes bot's @username to first name in text
 	return func(text string) string {
 		return strings.ReplaceAll(text, "@"+bot.UserName, bot.FirstName)
@@ -66,17 +59,16 @@ func (bot *Bot) getMentionHumanizer() func(string) string {
 }
 
 // Gets chat validator for bot
-func (bot *Bot) getChatValidator() func(*tg.Message, int64) bool {
+func (bot *Bot) getChatValidator() func(int64) bool {
 	allowedCIDs := bot.Settings.AllowedChats.IDs
 
 	// Identifies if chat has allowed ID
-	return func(msg *tg.Message, cid int64) bool {
+	return func(cid int64) bool {
 		for _, allowedCID := range allowedCIDs {
 			if cid == allowedCID {
 				return true
 			}
 		}
-
 		return false
 	}
 }

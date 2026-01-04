@@ -62,7 +62,7 @@ type AllowedChats struct {
 type PromptTemplates struct {
 	Response string `json:"response"`
 	Select   string `json:"select"`
-	Note     string `json:"note"`
+	Tags     string `json:"tags"`
 	Carma    string `json:"carma"`
 }
 
@@ -70,7 +70,7 @@ type PromptTemplates struct {
 type MemoryLimits struct {
 	ChatQueue  int `json:"chat_queue"`
 	ReplyChain int `json:"reply_chain"`
-	Note       int `json:"note"`
+	Tags       int `json:"tags"`
 }
 
 type Duration time.Duration
@@ -105,7 +105,7 @@ func MustLoadInitConf(confPath string) *InitConf {
 	}
 
 	// Validate templates or panic
-	mustValidateTemplates(&initConf.PromptTemplates)
+	mustValidateTemplates(&initConf.BotSettings.PromptTemplates)
 
 	return &initConf
 }
@@ -114,34 +114,34 @@ func MustLoadInitConf(confPath string) *InitConf {
 func mustValidateTemplates(templates *PromptTemplates) {
 	mustValidateResponseTemplate(templates.Response)
 	mustValidateSelectTemplate(templates.Select)
-	mustValidateNoteTemplate(templates.Note)
+	mustValidateTagsTemplate(templates.Tags)
 	mustValidateCarmaTemplate(templates.Carma)
 }
 
 // Validates response template or panics
 func mustValidateResponseTemplate(template string) {
 	const tType = "response template"
-	mustValidateNumOf(template, "%s", 5, tType)
+	mustValidateNumOf(template, "%s", 3, tType)
 }
 
 // Validates select template or panics
 func mustValidateSelectTemplate(template string) {
 	const tType = "select template"
-	mustValidateNumOf(template, "%s", 5, tType)
+	mustValidateNumOf(template, "%s", 3, tType)
 	mustValidateNumOf(template, "%d", 1, tType)
 }
 
 // Validates note template or panics
-func mustValidateNoteTemplate(template string) {
-	const tType = "note template"
-	mustValidateNumOf(template, "%s", 10, tType)
-	mustValidateNumOf(template, "%d", 2, tType)
+func mustValidateTagsTemplate(template string) {
+	const tType = "tags template"
+	mustValidateNumOf(template, "%s", 7, tType)
+	mustValidateNumOf(template, "%d", 1, tType)
 }
 
 // Validates all templates or panics
 func mustValidateCarmaTemplate(template string) {
 	const tType = "carma template"
-	mustValidateNumOf(template, "%s", 8, tType)
+	mustValidateNumOf(template, "%s", 5, tType)
 	mustValidateNumOf(template, "%d", 1, tType)
 }
 

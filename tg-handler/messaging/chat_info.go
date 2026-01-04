@@ -8,60 +8,69 @@ import (
 	"tg-handler/history"
 )
 
-// ChatInfo stores all chat data info important for bot
 type ChatInfo struct {
 	ID        int64
 	Title     string
-	History   *history.SafeChatHistory
+	History   *history.ChatHistory
 	IsAllowed bool
+	IsPrivate bool
 	LastMsg   *MessageInfo
 }
 
+// Constructs chat info by following bot procedure
+// on how to validate chat ID. Reuses chat queues
+// for public chats.
 func NewChatInfo(
 	m *MessageInfo,
 	sbh *history.SafeBotHistory,
-	validateChat func(*tg.Message, int64) bool,
+	shared history.SharedChatQueues,
+	validateChatID func(int64) bool,
 ) *ChatInfo {
-	// Get message and sender
+	// Get message vars
 	var (
-		msg    = m.Message
-		sender = m.Sender()
-		isVIP  = m.IsVIP
+		chat        = m.Chat
+		sender      = m.Sender()
+		isFromAdmin = m.IsFromAdmin
 	)
 
-	// Get chat
-	chat := msg.Chat
-
-	// Get chat ID and type
+	// Get chat vars
 	var (
-		chatID    = chat.ID
+		cid       = chat.ID
 		isPrivate = chat.IsPrivate()
 	)
 
-	// Check if chat is allowed
+	// Process message based on sender
 	var isAllowed bool
-	if isVIP {
+	var safeChatQueue *history.SafeChatQueue
+	if isFromAdmin { // Message from admin: allowed, new chat queue
 		isAllowed = true
-	} else {
-		isAllowed = validateChat(msg, chatID)
+	} else { // Ordinary message: validated, shared chat queue
+		isAllowed = validateChatID(cid)
+		safeChatQueue = shared[cid]
 	}
 
-	// Get history
-	SafeChatHistory, _ := sbh.Get(chatID)
+	// Get history by passing nil/shared safe chat queue
+	// for admin chats and public chats respectively,
+	// nil means new safe chat queue will be created
+	SafeChatHistory, _ := sbh.Get(cid, safeChatQueue)
 
 	return &ChatInfo{
-		ID:        chatID,
-		Title:     getChatTitle(msg, sender, isPrivate),
+		ID:        cid,
+		Title:     getChatTitle(chat, sender, isPrivate),
 		History:   SafeChatHistory,
 		IsAllowed: isAllowed,
 		LastMsg:   m,
 	}
 }
 
-// Gets chat title for public and private chats
-func getChatTitle(msg *tg.Message, sender string, isPrivate bool) string {
+// Gets chat title for any chat
+func getChatTitle(
+	chat *tg.Chat,
+	sender string,
+	isPrivate bool,
+) string {
 	if isPrivate {
 		return fmt.Sprintf("%s's private", sender)
 	}
-	return msg.Chat.Title
+	return chat.Title
 }

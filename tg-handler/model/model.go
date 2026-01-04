@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +40,7 @@ const (
 // Retry constants
 const (
 	maxSelectTry = 10
-	maxNoteTry   = 10
+	maxTagsTry   = 10
 	maxCarmaTry  = 10
 )
 
@@ -49,12 +50,22 @@ var (
 	// General error
 	ErrSelectFailed = errors.New("[model] selection failed")
 	// Specific errors to be wrapped
-	ErrIdxNaN = errors.New("candidate index is not a number")
-	ErrIdxOOB = errors.New("candidate index is out of bounds")
+	ErrNoNum = errors.New(
+		"no numbers found in response",
+	)
+	ErrIdxNaN = errors.New(
+		"candidate index is not a number",
+	)
+	ErrIdxOOB = errors.New(
+		"candidate index is out of bounds",
+	)
+	ErrInvalidCandidateNum = errors.New(
+		"negative or zero candidate num",
+	)
 
 	// Carma
 	// General error
-	ErrCarmaFailed = errors.New("[model] carma failed")
+	ErrCarmaUpdateFailed = errors.New("[model] carma update failed")
 	// Specific errors to be wrapped
 	ErrEnumOOV = errors.New("carma update outside of enum variants")
 )
@@ -99,7 +110,7 @@ func (cs Candidates) String() (s string) {
 	var sb strings.Builder
 	for i, candidate := range cs {
 		sb.WriteString(
-			fmt.Sprintf("[%d] <resp>%s</resp>\n\n", i+1, candidate),
+			fmt.Sprintf("%d) %s\n\n", i+1, candidate),
 		)
 	}
 	return sb.String()
@@ -137,8 +148,8 @@ func (m *Model) Reflect(
 	botContact.Carma += int(carmaUpdate)
 
 	// Update bot contact persona
-	note := m.updateNote(ctx, msg.Line())
-	botContact.Note = note
+	tags := m.updateTags(ctx, msg.Line())
+	botContact.Tags = tags
 
 	// Update bot contacts with new bot contact
 	botContacts.Set(sender, botContact)
@@ -146,12 +157,16 @@ func (m *Model) Reflect(
 
 // Generates candidates
 func (m *Model) generateCandidates(ctx context.Context) []string {
+	var (
+		candidateNum = m.Config.Main.CandidateNum
+		candidates   = make([]string, 0, candidateNum)
+	)
+	if candidateNum <= 0 {
+		log.Fatalf("%v: %v", ErrSelectFailed, ErrInvalidCandidateNum)
+	}
+
 	// Create request
 	request := newRequest(m.Prompts.Response, m.Config)
-
-	// Prepare candidates and candidate number
-	candidateNum := m.Config.Main.CandidateNum
-	candidates := make([]string, 0, candidateNum)
 
 	// Generate candidates
 	for i := range candidateNum {
@@ -172,6 +187,8 @@ func (m *Model) selectCandidate(
 	ctx context.Context,
 	candidates Candidates,
 ) int {
+	re := regexp.MustCompile(`\b(\d+)\b`)
+
 	// Finalizes prompt formatting
 	prompt := prompts.FinFmtSelectPrompt(m.Prompts.Select, candidates)
 
@@ -181,8 +198,10 @@ func (m *Model) selectCandidate(
 	// Try to generate selection index
 	var err error
 	for i := range maxSelectTry {
-		// Log previous try error
-		if i > 0 {
+		// Log try and error if not the first try
+		if i == 0 {
+			log.Printf("Select try: %d", i+1)
+		} else if i > 0 {
 			log.Printf(
 				"Select try %d: %v: %v",
 				i+1, ErrSelectFailed, err,
@@ -192,17 +211,25 @@ func (m *Model) selectCandidate(
 		// Send request
 		selectText := sendRequestEternal(ctx, request)
 
+		// Get last number in select text
+		matches := re.FindAllString(selectText, -1)
+		if len(matches) == 0 {
+			err = ErrNoNum
+			continue // Fail
+		}
+		lastNumStr := matches[len(matches)-1]
+
 		// Get selection number
-		selectNum, err := strconv.Atoi(selectText)
+		selectNum, convErr := strconv.Atoi(lastNumStr)
 		if err != nil {
-			err = fmt.Errorf("%w: %v", ErrIdxNaN, err)
+			err = fmt.Errorf("%w: %v", ErrIdxNaN, convErr)
 			continue // Fail
 		}
 
 		// Validate index
 		candidateIdx := selectNum - 1
 		if candidateIdx >= 0 && candidateIdx < len(candidates) {
-			log.Printf("[model] candidate idx: %d", candidateIdx)
+			log.Printf("[model] candidate selected: %d", selectNum)
 			return candidateIdx // Success
 		}
 		err = fmt.Errorf("%w: %d not in (0-%d)",
@@ -210,30 +237,30 @@ func (m *Model) selectCandidate(
 		)
 	}
 
-	// Select 0-th candidate on fail
-	log.Printf("[model] candidate idx: %d", 0)
+	// Select 1-st candidate on fail
+	log.Printf("[model] candidate selected: %d", 1)
 	return 0
 }
 
-// Generates note update
-func (m *Model) updateNote(
+// Generates new tags
+func (m *Model) updateTags(
 	ctx context.Context,
 	line string,
 ) string {
-	// Finalize note prompt formatting
-	prompt := prompts.FinFmtNotePrompt(m.Prompts.Note, line)
+	// Finalize tags prompt formatting
+	prompt := prompts.FinFmtTagsPrompt(m.Prompts.Tags, line)
 
 	// Create request
 	request := newRequest(prompt, m.Config)
 
-	// Get new note
-	note := sendRequestEternal(ctx, request)
+	// Get new tags
+	tags := sendRequestEternal(ctx, request)
 
-	// Cut hash tags
-	note = cutHashTags(note, m.Memory.Limits.Note)
+	// Clean tags
+	tags = cleanTags(tags, m.Memory.Limits.Tags)
 
-	log.Printf("[model] note: %s", note)
-	return note
+	log.Printf("[model] tags: %s", tags)
+	return tags
 }
 
 // Generates carma update
@@ -251,7 +278,10 @@ func (m *Model) updateCarma(
 	for i := range maxCarmaTry {
 		// Log previous try error
 		if i > 0 {
-			log.Printf("Carma try %d: %v: %v", i+1, ErrCarmaFailed, err)
+			log.Printf(
+				"Carma try %d: %v: %v",
+				i+1, ErrCarmaUpdateFailed, err,
+			)
 		}
 
 		// Send request

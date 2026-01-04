@@ -41,14 +41,23 @@ func MustLoadAPIKeys() []string {
 		log.Fatalf("%v: %v", ErrReadFileFailed, err)
 	}
 
-	// Get non-empty keys string
 	keysStr := string(content)
-	if keysStr == "" {
+	if strings.TrimSpace(keysStr) == "" {
 		log.Fatal(ErrEmptyKeysStr)
 	}
 
-	// Get non-zero keys
-	keys := strings.Split(keysStr, "\n")
+	// Split by newline and clean up
+	rawLines := strings.Split(keysStr, "\n")
+	var keys []string
+
+	for _, line := range rawLines {
+		// TrimSpace removes \t, \n, \r, and spaces
+		cleaned := strings.TrimSpace(line)
+		if cleaned != "" {
+			keys = append(keys, cleaned)
+		}
+	}
+
 	if len(keys) < 1 {
 		log.Fatal(ErrZeroKeys)
 	}

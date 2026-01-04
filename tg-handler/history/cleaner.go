@@ -8,33 +8,56 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"tg-handler/conf"
 )
 
 // Cleaner errors
 var (
-	ErrSaveFailed = errors.New("[cleaner] failed to save history")
+	ErrSaveFailed = errors.New(
+		"[history] cleaner failed to save history",
+	)
 )
 
-// Context message variations
+// Cleaner context logs
 const (
-	// Main message
-	ctxDoneMsg = "[cleaner] received shutdown signal upon"
+	// Event message
+	ctxDoneMsg = "[history] cleaner received shutdown signal upon "
 
-	// Operations
-	opCleanAndSave = "clean and save operation"
-	opSendingJobs  = "sending jobs to channel"
-	opGettingJobs  = "getting jobs from channel"
+	// Interrupted operations
+	opWaiting     = "waiting"
+	opSendingJobs = "sending jobs to channel"
+	opGettingJobs = "getting jobs from channel"
 )
 
-// Single unit of update
+// Single clean unit
 type CleanJob struct {
-	BotName string
-	CID     int64
+	ChatQueue   *SafeChatQueue
+	ReplyChains *SafeReplyChains
 }
 
-// Deletes messages with expired TTL every clean up interval
-func (safeHistory *SafeHistory) Cleaner(
+// Performs clean job
+func (j *CleanJob) perform(
+	currentTime time.Time,
+	messageTTL time.Duration,
+) {
+	var (
+		chatQueue   = j.ChatQueue
+		replyChains = j.ReplyChains
+	)
+
+	// Perform conditional cleaning
+	if chatQueue != nil {
+		chatQueue.clean(currentTime, messageTTL)
+	}
+	if replyChains != nil {
+		replyChains.clean(currentTime, messageTTL)
+	}
+}
+
+// Deletes expired messages with interval and saves cleaned history
+func (h *History) Cleaner(
 	ctx context.Context,
 	path string,
 	settings *conf.CleanerSettings,
@@ -49,190 +72,170 @@ func (safeHistory *SafeHistory) Cleaner(
 	t := time.NewTicker(cleanupInterval)
 	defer t.Stop()
 
-	// Clean and save on tick until context done
-	defer log.Println("Cleaner shut down gracefully")
+	// Clean and save on tick until context DONE
+	defer log.Println("[history] cleaner shut down gracefully")
 	for {
 		select {
 		case <-t.C:
-			done := safeHistory.cleanAndSave(ctx, path, messageTTL)
-			if done { // Check deeper context done
+			// Clean
+			err := h.clean(ctx, messageTTL)
+			if err != nil && errors.Is(err, context.Canceled) {
 				return
 			}
+			// Save (skip extra context check)
+			if err := h.Save(path); err != nil {
+				log.Printf("%v: %v", ErrSaveFailed, err)
+			}
 		case <-ctx.Done():
-			log.Println(ctxDoneMsg + opCleanAndSave)
+			log.Println(ctxDoneMsg + opWaiting)
 			return
 		}
 	}
 }
 
-// Cleans in runtime and saves history locally
-func (sh *SafeHistory) cleanAndSave(
-	ctx context.Context,
-	historyPath string,
-	messageTTL time.Duration,
-) bool {
-	// Clean
-	done := sh.clean(ctx, messageTTL)
-	if done { // Check deeper context done
-		return true
-	}
-
-	// Save history
-	if err := sh.Save(historyPath); err != nil {
-		log.Printf("%v: %v", ErrSaveFailed, err)
-	}
-
-	return false
-}
-
-// Deletes expired messages in safe history
-func (sh *SafeHistory) clean(
+// Deletes expired messages in history
+func (h *History) clean(
 	ctx context.Context,
 	messageTTL time.Duration,
-) bool {
-	var wg sync.WaitGroup
+) error {
+	var currentTime = time.Now()
 
-	// Get current time
-	currentTime := time.Now()
+	// CREATE error group & context
+	// When ctx done, gctx done for all workers with logging once
+	g, gctx := errgroup.WithContext(ctx)
+	var logSendingOnce, logGettingOnce sync.Once
 
-	// COLLECT all jobs
-	jobs := sh.collectCleanJobs()
-	if len(jobs) == 0 {
-		return false
+	// COLLECT jobs
+	jobs := h.collectCleanJobs()
+	if len(jobs) < 1 {
+		return nil
 	}
 
-	// CREATE worker pool (no more workers than jobs)
-	workerCount := min(runtime.GOMAXPROCS(0), len(jobs))
+	// START job sender
 	jobsChan := make(chan CleanJob, len(jobs))
-	doneChan := make(chan struct{})
+	g.Go(func() error { // evaluates to error
+		return jobSender(gctx, jobs, jobsChan, &logSendingOnce)
+	})
 
-	// START workers
-	go func() {
-		for workerID := range workerCount {
-			wg.Go(func() {
-				sh.cleanWorker(
-					ctx, currentTime, messageTTL,
-					jobsChan, workerID, doneChan,
-				)
-			})
-		}
-	}()
+	// START clean workers (job receivers)
+	workerCount := min(runtime.GOMAXPROCS(0), len(jobs))
+	for workerID := range workerCount {
+		g.Go(func() error {
+			return h.cleanWorker( // evaluates to error
+				gctx, workerID, jobsChan, currentTime, messageTTL,
+				&logGettingOnce,
+			)
+		})
+	}
 
-	// SEND jobs to channel until context DONE
-	go func() {
-		defer close(jobsChan) // All jobs sent
-
-		for _, job := range jobs {
-			select {
-			case jobsChan <- job:
-			case <-doneChan:
-				return
-			case <-ctx.Done():
-				log.Println(ctxDoneMsg + opSendingJobs)
-				doneChan <- struct{}{}
-			}
-		}
-	}()
-
-	// WAIT for completion
-	wg.Wait()
-
-	return false
+	return g.Wait() // evaluates to error
 }
 
-func (sh *SafeHistory) collectCleanJobs() []CleanJob {
+func (h *History) collectCleanJobs() []CleanJob {
 	var jobs []CleanJob
 
-	sh.mu.RLock()
-	defer sh.mu.RUnlock()
+	var (
+		scqs = h.SharedChatQueues
+		bots = h.Bots
+	)
 
-	// Iterate over safe bot data
-	for botName, sbd := range sh.History {
-		sbd.mu.RLock()
+	// Firstly add SHARED chat queues to jobs
+	for _, scq := range scqs {
+		jobs = append(jobs, CleanJob{
+			ChatQueue: scq,
+		})
+	}
 
-		// Get only safe bot history
-		sbh := &sbd.Data.History // Safe bot history is auto-cleaned
+	// Secondly add LOCAL chat queues & reply chains to jobs
+	bots.mu.RLock()
+	defer bots.mu.RUnlock()
+	for _, botData := range bots.History { // All safe bot data's
+		sbh := botData.History // All safe bot histories
 
-		// Iterate over safe bot history
 		sbh.mu.RLock()
-		for cid := range sbh.History {
+		for _, sch := range sbh.History { // All safe chat histories
+			chatQueue, replyChains := sch.ChatQueue, sch.ReplyChains
+
+			// Add local chat queue to jobs
+			chatQueue.mu.RLock()
+			if !chatQueue.IsShared {
+				jobs = append(jobs, CleanJob{
+					ChatQueue: chatQueue,
+				})
+			}
+			chatQueue.mu.RUnlock()
+
+			// Add reply chains to jobs (always local)
+			replyChains.mu.RLock()
 			jobs = append(jobs, CleanJob{
-				BotName: botName,
-				CID:     cid,
+				ReplyChains: replyChains,
 			})
+			replyChains.mu.RUnlock()
 		}
 		sbh.mu.RUnlock()
-
-		sbd.mu.RUnlock()
 	}
 
 	log.Printf("[cleaner] collected %d jobs", len(jobs))
 	return jobs
 }
 
-// Processess clean jobs with context
-func (sh *SafeHistory) cleanWorker(
-	ctx context.Context,
+// Sends jobs to job channel with context
+func jobSender(
+	gctx context.Context,
+	jobs []CleanJob,
+	jobsChan chan<- CleanJob,
+	logSendingOnce *sync.Once,
+) error {
+	// CLOSE channel after all sent
+	defer close(jobsChan)
+
+	// SEND jobs until group context DONE
+	for _, job := range jobs {
+		select {
+		case jobsChan <- job:
+		case <-gctx.Done(): // done for all workers
+			logSendingOnce.Do(func() { // log only first time
+				log.Println(ctxDoneMsg + opSendingJobs)
+			})
+			return gctx.Err()
+		}
+	}
+
+	return nil
+}
+
+// Gets clean jobs with context and performs them
+func (h *History) cleanWorker(
+	gctx context.Context,
+	workerID int,
+	jobsChan <-chan CleanJob,
 	currentTime time.Time,
 	messageTTL time.Duration,
-	jobsChan <-chan CleanJob,
-	workerID int,
-	doneChan chan<- struct{},
-) {
-	// GET jobs from channel jobs channel CLOSED or context DONE
+	logGettingOnce *sync.Once,
+) error {
+	// GET jobs until jobs channel CLOSED or group context DONE
 	for processed := 0; ; processed++ {
 		select {
 		case job, ok := <-jobsChan:
-			if !ok { // Channel closed
+			if !ok { // channel closed
 				log.Println("[cleaner] jobs channel closed")
 				log.Printf(
 					"[cleaner] worker %d processed %d jobs",
 					workerID, processed,
 				)
-				return
+				return nil
 			}
-			sh.processCleanJob(currentTime, messageTTL, job)
-		case <-ctx.Done():
-			log.Println(ctxDoneMsg + opGettingJobs)
-			doneChan <- struct{}{}
-			return
+
+			// Perform clean job
+			job.perform(currentTime, messageTTL)
+
+		case <-gctx.Done(): // done for all workers
+			logGettingOnce.Do(func() { // log only first time
+				log.Println(ctxDoneMsg + opGettingJobs)
+			})
+			return gctx.Err()
 		}
 	}
-}
-
-// Handles single chat cleanup
-func (sh *SafeHistory) processCleanJob(
-	currentTime time.Time,
-	messageTTL time.Duration,
-	job CleanJob,
-) {
-	// Get chat directly without creating new ones
-	sch, ok := sh.GetChatHistory(job.BotName, job.CID)
-	if !ok {
-		return
-	}
-
-	// Clean both structures
-	sch.History.ChatQueue.clean(currentTime, messageTTL)
-	sch.History.ReplyChains.clean(currentTime, messageTTL)
-}
-
-func (sh *SafeHistory) getChatHistory(
-	botName string,
-	chatID int64,
-) (*SafeChatHistory, bool) {
-	// Get safe bot data
-	sbd, ok := sh.Get(botName)
-	if !ok {
-		return nil, false
-	}
-
-	// Get only safe bot history
-	sbh, _ := sbd.Get() // Omit safe bot contacts as auto-cleaned
-
-	// Get safe chat history
-	sch, ok := sbh.Get(chatID)
-	return sch, ok
 }
 
 // Deletes expired messages in chat queue
@@ -274,7 +277,7 @@ func (src *SafeReplyChains) clean(
 	replyChains := src.ReplyChains
 
 	// Delete messages which time of existence
-	// is longer than time to live.
+	// is longer than time to live
 	for line, messageEntry := range replyChains {
 		if currentTime.Sub(messageEntry.Timestamp) > messageTTL {
 			delete(replyChains, line)

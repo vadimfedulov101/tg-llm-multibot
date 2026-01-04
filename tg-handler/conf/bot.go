@@ -9,8 +9,8 @@ import (
 
 // Bot config
 type BotConf struct {
-	Main     MainSettings     `json:"main_settings"`
-	Optional OptionalSettings `json:"optional_settings"`
+	Main     MainSettings     `json:"bot_conf"`
+	Optional OptionalSettings `json:"options"`
 }
 
 // Main settings for LLM

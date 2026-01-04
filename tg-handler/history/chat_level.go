@@ -24,180 +24,178 @@ type prevLineProvider interface {
 	PrevLine() string
 }
 
-// (SAFE) CHAT HISTORY
+// CHAT HISTORY
 
-type SafeChatHistory struct {
-	mu      sync.RWMutex
-	History ChatHistory
-}
-
-func NewSafeChatHistory() *SafeChatHistory {
-	return &SafeChatHistory{
-		History: *NewChatHistory(),
-	}
-}
-
+// Chat history consists from chat queue and reply chains.
+// No pointer swap occures after initialization, no mutex needed.
 type ChatHistory struct {
-	ChatQueue   SafeChatQueue
-	ReplyChains SafeReplyChains
+	ChatQueue   *SafeChatQueue   // Read-only
+	ReplyChains *SafeReplyChains // Read-only
 }
 
-func NewChatHistory() *ChatHistory {
+// Constructs chat history with
+// shared queue for public chats, local queue for private chats.
+func NewChatHistory(scq *SafeChatQueue) *ChatHistory {
+	// If no safe queue, create it as local
+	if scq == nil {
+		scq = NewSafeChatQueue(false)
+	}
+	// Set queue as local or shared
 	return &ChatHistory{
-		ChatQueue:   *NewSafeChatQueue(),
-		ReplyChains: *NewSafeReplyChains(),
+		ChatQueue:   scq,
+		ReplyChains: NewSafeReplyChains(),
 	}
 }
 
 // CHAT QUEUE BRANCH
 
 type SafeChatQueue struct {
-	mu        sync.Mutex
+	mu        sync.RWMutex
 	ChatQueue ChatQueue
+
+	IsShared bool
 }
 
-func NewSafeChatQueue() *SafeChatQueue {
+// Constructs safe chat queue
+// shared for public chats, local for private.
+func NewSafeChatQueue(isShared bool) *SafeChatQueue {
 	return &SafeChatQueue{
-		ChatQueue: *NewChatQueue(),
+		ChatQueue: NewChatQueue(),
+		IsShared:  isShared,
 	}
-
 }
 
 type ChatQueue []MessageEntry
 
-func NewChatQueue() *ChatQueue {
+func NewChatQueue() ChatQueue {
 	c := make(ChatQueue, 0, chatQueueCap)
-	return &c
+	return c
 }
 
 // REPLY CHAINS BRANCH
 
 type SafeReplyChains struct {
-	mu          sync.Mutex
+	mu          sync.RWMutex
 	ReplyChains ReplyChains
 }
 
 func NewSafeReplyChains() *SafeReplyChains {
 	return &SafeReplyChains{
-		ReplyChains: *NewReplyChains(),
+		ReplyChains: NewReplyChains(),
 	}
 
 }
 
 type ReplyChains map[string]MessageEntry
 
-func NewReplyChains() *ReplyChains {
+func NewReplyChains() ReplyChains {
 	r := make(ReplyChains, replyChainsCap)
-	return &r
+	return r
 }
 
 // METHODS
 
-// Unpacks chat queue and reply chains from safe chat history
-func (sch *SafeChatHistory) Unpack() (*SafeChatQueue, *SafeReplyChains) {
-	// Ensure secure access
-	sch.mu.RLock()
-	defer sch.mu.RUnlock()
-
-	// Get history and its content
-	history := &sch.History
-	return &history.ChatQueue, &history.ReplyChains
+// Adds message to queue
+func (ch *ChatHistory) AddToChatQueue(lc LineChain) {
+	ch.ChatQueue.add(lc)
 }
 
 // Adds message to queue and chains
-func (sch *SafeChatHistory) AddTo(lc LineChain) {
-	// Ensure secure access
-	sch.mu.Lock()
-	defer sch.mu.Unlock()
-
-	// Unpack safe chat history
-	chatQueue, replyChain := sch.Unpack()
-
-	chatQueue.AddTo(lc)
-	replyChain.AddTo(lc)
+func (ch *ChatHistory) AddToBoth(lc LineChain) {
+	ch.ChatQueue.add(lc)
+	ch.ReplyChains.add(lc)
 }
 
-// Add to chat queue
-func (scq *SafeChatQueue) AddTo(lc LineChain) {
-	scq.AppendLine(lc.Line())
+// Gets lines from safe chat queue with limit
+func (scq *SafeChatQueue) GetLines(lim int) []string {
+	// Ensure secure access
+	scq.mu.RLock()
+	defer scq.mu.RUnlock()
+
+	// Call private getter securely
+	return scq.ChatQueue.getLines(lim)
+}
+
+// Gets lines from reply chains with limit
+func (src *SafeReplyChains) GetLines(
+	prevLine string,
+	lastLine string,
+	lim int,
+) []string {
+	// Ensure secure access
+	src.mu.RLock()
+	defer src.mu.RUnlock()
+
+	// Call private getter securely
+	return src.ReplyChains.getLines(prevLine, lastLine, lim)
+}
+
+// Adds message line to chat queue
+func (scq *SafeChatQueue) add(lc LineChain) {
+	// Ensure secure access
+	scq.mu.Lock()
+	defer scq.mu.Unlock()
+
+	// For shared chat queue check if line has been added
+	var (
+		isShared = scq.IsShared
+		cq       = &scq.ChatQueue
+	)
+	if isShared && len(*cq) > 0 {
+		lastMsg := (*cq)[len(*cq)-1]
+		if lastMsg.Line == lc.Line() {
+			return
+		}
+	}
+
+	cq.appendLine(lc.Line())
 	log.Println("[history] chat queue++")
 }
 
-// Add to reply chains
-func (src *SafeReplyChains) AddTo(lc LineChain) {
-	lines := src.GetLines(lc.PrevLine(), lc.Line(), 2)
-	src.SetLines(lines)
-
-	log.Println("[history] reply chains++")
-}
-
-// Appends line to safe chat queue
-func (scq *SafeChatQueue) AppendLine(line string) {
-	// Ensure secure access
-	scq.mu.Lock()
-	defer scq.mu.Unlock()
-
-	// Get message entry
-	messageEntry := *NewMessageEntry(line)
-
-	// Append message entry to chat queue
-	scq.ChatQueue = append(scq.ChatQueue, messageEntry)
-}
-
-// Gets lines from safe chat queue
-func (scq *SafeChatQueue) GetLines(limit int) []string {
-	lines := make([]string, 0, limit)
-
-	// Ensure secure access
-	scq.mu.Lock()
-	defer scq.mu.Unlock()
-
-	// Get chat queue
-	chatQueue := scq.ChatQueue
-
-	// Accumulate lines with memory limit
-	for i, messageEntry := range chatQueue {
-		if i+1 > limit {
-			break
-		}
-		lines = append(lines, messageEntry.Line)
-	}
-
-	log.Printf(
-		"[history] chat queue: %d message lines", len(lines),
-	)
-	return lines
-}
-
-// Sets lines in safe reply chains
-func (src *SafeReplyChains) SetLines(lines []string) {
-	// Incomplete or too long chain, no set
-	if len(lines) != 2 {
-		return
-	}
-
+// Adds message line to reply chains atomically
+func (src *SafeReplyChains) add(lc LineChain) {
 	// Ensure secure access
 	src.mu.Lock()
 	defer src.mu.Unlock()
 
 	// Get reply chains
-	replyChains := src.ReplyChains
+	rc := src.ReplyChains
 
-	// Set lines
-	var (
-		prevLine = lines[0]
-		lastLine = lines[1]
-	)
-
-	// Set chain
-	replyChains[lastLine] = *NewMessageEntry(prevLine)
+	// Get chain and set it
+	lines := rc.getLines(lc.PrevLine(), lc.Line(), 2)
+	if ok := rc.setLines(lines); ok {
+		log.Println("[history] reply chains++")
+	}
 }
 
-// Gets lines from safe reply chains with limit
-func (src *SafeReplyChains) GetLines(
+// Appends message line to chat queue
+func (cq *ChatQueue) appendLine(line string) {
+	*cq = append(*cq, *NewMessageEntry(line))
+}
+
+// Gets lines from chat queue with limit
+func (cq ChatQueue) getLines(lim int) []string {
+	lines := make([]string, 0, lim)
+
+	// Shift by limit if exceeded
+	shift := min(len(cq), lim)
+	// Get start index by shifting
+	start := len(cq) - shift
+
+	// Accumulate lines
+	for _, msg := range cq[start:] {
+		lines = append(lines, msg.Line)
+	}
+
+	log.Printf("[history] chat queue: %d lines", len(lines))
+	return lines
+}
+
+// Gets lines from reply chains with limit
+func (rc ReplyChains) getLines(
 	prevLine string,
 	lastLine string,
-	limit int,
+	lim int,
 ) []string {
 	// Incomplete chain, no unroll
 	if prevLine == "" {
@@ -206,19 +204,11 @@ func (src *SafeReplyChains) GetLines(
 	// Complete chain, proceed to unroll
 	replyChain := []string{lastLine, prevLine}
 
-	// Ensure secure access
-	src.mu.Lock()
-	defer src.mu.Unlock()
-
-	// Get reply chains
-	replyChains := src.ReplyChains
-
-	// Accumulate lines unrolling reply chain backwards
-	// up to memory limit
-	for range limit - 2 {
+	// Accumulate lines unrolling reply chain backwards up to limit
+	for range lim - 2 {
 		lastLine = prevLine
-		if messageEntry, ok := replyChains[lastLine]; ok {
-			prevLine = messageEntry.Line
+		if msg, ok := rc[lastLine]; ok {
+			prevLine = msg.Line
 			replyChain = append(replyChain, prevLine)
 		} else {
 			break
@@ -230,8 +220,25 @@ func (src *SafeReplyChains) GetLines(
 		replyChain[i], replyChain[j] = replyChain[j], replyChain[i]
 	}
 
-	log.Printf(
-		"[history] reply chain: %d message lines", len(replyChain),
-	)
+	log.Printf("[history] reply chain: %d lines", len(replyChain))
 	return replyChain
+}
+
+// Sets message lines in safe reply chains
+func (rc ReplyChains) setLines(lines []string) bool {
+	// Incomplete or too long chain, no set
+	if len(lines) != 2 {
+		return false
+	}
+
+	// Set lines
+	var (
+		prevLine = lines[0]
+		lastLine = lines[1]
+	)
+
+	// Set chain
+	rc[lastLine] = *NewMessageEntry(prevLine)
+
+	return true
 }
