@@ -148,8 +148,7 @@ func (bot *Bot) handleUpdate(ctx context.Context, upd tg.Update) {
 	}
 
 	// Check if not triggered
-	if !chatInfo.LastMsg.IsTriggering {
-		// Save message anyway
+	if !chatInfo.LastMsg.IsTriggering { // Save anyway
 		chatInfo.History.AddToChatQueue(chatInfo.LastMsg)
 		return
 	}
@@ -164,6 +163,9 @@ func (bot *Bot) handleMessage(
 ) {
 	log.Printf("[bot] %s got message", bot.UserName)
 
+	// Add message to history
+	chatInfo.History.AddToBoth(chatInfo.LastMsg)
+
 	// Get memory
 	memory := memory.New(
 		chatInfo.History, bot.Contacts,
@@ -176,8 +178,6 @@ func (bot *Bot) handleMessage(
 		chatInfo.LastMsg, bot.FirstName, chatInfo.Title,
 	)
 
-	// Add message to history and proceed in separate goroutine
-	chatInfo.History.AddToBoth(chatInfo.LastMsg)
 	go func() {
 		// Reply
 		replyInfo := bot.reply(ctx, model, chatInfo)
