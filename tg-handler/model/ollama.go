@@ -9,10 +9,30 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"tg-handler/conf"
 )
+
+// Ollama errors
+var (
+	ErrLoadEnvFailed = errors.New(
+		"[model] failed to load $LLM_MODEL from environment",
+	)
+)
+
+// Environment constant
+var model = getEnv("LLM_MODEL", ErrLoadEnvFailed)
+
+func getEnv(key string, err error) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+
+	log.Fatal(err)
+	return ""
+}
 
 // Request to Ollama
 type Request struct {
@@ -26,7 +46,7 @@ type Request struct {
 
 func newRequest(prompt string, botConf *conf.BotConf) *Request {
 	return &Request{
-		Model:        model, // predefined constant
+		Model:        model, // Loaded from environment
 		Prompt:       prompt,
 		Stream:       false,
 		SystemPrompt: botConf.Main.Role,
@@ -60,18 +80,27 @@ var (
 )
 
 // Eternally sends request to API and logs error
-func sendRequestEternal(ctx context.Context, request *Request) (text string) {
-	var err error
+func sendRequestEternal(ctx context.Context, request *Request) string {
+	var (
+		text string
+		err  error
+	)
+
+	// Get text
 	for {
 		text, err = sendRequest(ctx, request)
 		if err == nil {
 			break
 		}
-		log.Printf("Failed send: %v", err)
+		log.Printf("%v: %v", ErrSendFailed, err)
 		time.Sleep(retryTime)
 	}
 
-	return trimNoise(text)
+	// Clean text
+	text = trimNoise(text)
+
+	log.Println("Cleaned text: ", text)
+	return text
 }
 
 // Sends Ollama request

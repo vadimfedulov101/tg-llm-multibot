@@ -22,7 +22,6 @@ type Prompts struct {
 
 // Formats all prompts incrementally
 func New(
-	conf *conf.BotConf,
 	templates *conf.PromptTemplates,
 	memory *memory.Memory,
 	senderP SenderProvider,
@@ -36,24 +35,23 @@ func New(
 		tagsTemplate     = templates.Tags
 		carmaTemplate    = templates.Carma
 
-		// Get settings
-		candidateNum = conf.Main.CandidateNum
-		tagsLimit    = memory.Limits.Tags
+		// Get tags limit
+		tagsLimit = memory.Limits.Tags
 
-		// Get names
+		// Get sender username
 		userName = senderP.Sender()
-		names    = NewNames(botName, userName)
 	)
+
+	// Get names
+	names := NewNames(botName, userName)
 
 	return &Prompts{
 		Response: fmtResponsePrompt(
 			responseTemplate, memory, names, chatTitle,
 		),
-		Select: fmtSelectPrompt(
-			selectTemplate, memory, names, candidateNum,
-		),
-		Tags:  fmtTagsPrompt(tagsTemplate, memory, names, tagsLimit),
-		Carma: fmtCarmaPrompt(carmaTemplate, memory, names),
+		Select: fmtSelectPrompt(selectTemplate, memory, names),
+		Tags:   fmtTagsPrompt(tagsTemplate, memory, names, tagsLimit),
+		Carma:  fmtCarmaPrompt(carmaTemplate, memory, names),
 	}
 }
 
@@ -70,11 +68,8 @@ func NewNames(bot string, user string) *Names {
 	}
 }
 
-// Finalizes candidates prompt formatting (avoid dependency on type)
-func FinFmtSelectPrompt[T fmt.Stringer](
-	prompt string,
-	candidates T,
-) string {
+// Finalizes select prompt formatting
+func FinFmtSelectPrompt(prompt string, candidates []string) string {
 	return fmt.Sprintf(prompt, candidates)
 }
 
@@ -107,15 +102,16 @@ func fmtSelectPrompt(
 	template string,
 	memory *memory.Memory,
 	names *Names,
-	candidateNum int,
+	candidates []string,
 ) string {
 	var botName = names.Bot
 
 	return fmt.Sprintf(template,
 		botName,
 		memory,
-		"%s", // Response candidates placeholder
-		candidateNum,
+		"%s", // Response candidate placeholder
+		candidates,
+		len(candidates),
 	)
 }
 

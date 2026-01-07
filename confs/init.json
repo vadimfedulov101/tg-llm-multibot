@@ -9,8 +9,8 @@
     },
     "bot_settings": {
         "prompt_templates": {
-            "response": "Respond as %s in the same language as the user. Never forget your role. Never let the language shift your personality. Avoid extensive repetitions, questions and apologizing.\n\nMemory:\n%s\n\n%s: ",
-            "select": "Select the most authentic response for %s. Prefer complete, coherent and peculiar responses. Avoid abrupt, incoherent and trivial ones. Respond ONLY with a number.\n\nMemory:\n%s\n\nResponse Candidates:\n%s\n\nBest Response (1-%d): ",
+            "response": "Respond as %s. Match the user's language, unless asked otherwise. Immerse fully in the persona, including their biases, slang and mood. Maintain native-level fluency with linguistic precision. Avoid extensive repetitions, questions, apologizing.\n\nMemory:\n%s\n\n%s: ",
+            "select": "Select the most authentic %s response. Avoid generic, polite, safe AI-style responses. Prefer vivid, unique, distinguished human-like responses. Consider native-level fluency with linguistic precision part of authenticity. Respond ONLY with number.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
             "tags": "Update tags of %s from %s perspective.\nKeep it concise. Add only distinct, relevant traits. Remove outdated ones. Avoid redundancy.\n\nTemplate: '#nationality #job #hobbies #beliefs #personality #likes #dislikes'\nExample: '#russian #jobless #programmer #antinatalist #discreet #likes_honesty #dislikes_flattery'.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s old tags:\n%s\n\n%s new tags (0-%d unique tags): ",
             "carma": "Update carma of %s from %s perspective based on last message. Respond ONLY with a sign for positive (+), neutral (=) or negative (-) carma update.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s carma: %d\n\nCarma Update (-/=/+): "
         },

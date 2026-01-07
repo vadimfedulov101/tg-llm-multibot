@@ -4,45 +4,45 @@ import (
 	"strings"
 )
 
-// Cuts hash tags to limit
-func cleanTags(tags string, limit int) string {
+// Cuts tags to limit
+func cutTags(s string, lim int) string {
 	// Get raw tags slice
-	rawTags := strings.Fields(tags)
+	oldTags := strings.Fields(s)
 
 	// Set for deduplication
 	seen := make(map[string]bool)
-	var cleanTags []string
+	var newTags []string
 
-	// Clean tags
-	for _, tag := range rawTags {
-		// Skip garbage
+	// Cut tags with cleaning and deduplication
+	for _, tag := range oldTags {
+		// Skip not-hashtags
 		if !strings.HasPrefix(tag, "#") {
 			continue
 		}
-		// Check duplicate
+		// Skip duplicates
 		if seen[tag] {
 			continue
 		}
 
-		// Add clean tag
+		// Add new tag
 		seen[tag] = true
-		cleanTags = append(cleanTags, tag)
+		newTags = append(newTags, tag)
 
 		// Stop if limit reached
-		if len(cleanTags) >= limit {
+		if len(newTags) >= lim {
 			break
 		}
 	}
 
-	// Return clean tags
-	return strings.Join(cleanTags, " ")
+	// Return new tags
+	return strings.Join(newTags, " ")
 }
 
 // Removes noise
 func trimNoise(s string) string {
 	s = trimThinkingTags(s)
 	s = strings.TrimSpace(s)
-
+	s = strings.Trim(s, "*")
 	return s
 }
 

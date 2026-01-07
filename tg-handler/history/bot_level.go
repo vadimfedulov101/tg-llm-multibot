@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	"tg-handler/carma"
+	"tg-handler/tags"
 )
 
+// Constants
 const (
 	botHistoryCap  = 256
 	botContactsCap = 256
@@ -82,13 +86,11 @@ func (bcs BotContacts) String() string {
 	// Describe contacts
 	sb.WriteString("Contacts (users known to you):\n")
 
-	// Handle no contacts
+	// Present contacts
 	if bcs == nil {
 		sb.WriteString("<no contacts>")
 		return sb.String()
 	}
-
-	// Handle contacts
 	for userName, contact := range bcs {
 		sb.WriteString(
 			fmt.Sprintf("user: %s\n%s\n", userName, contact),
@@ -101,8 +103,8 @@ func (bcs BotContacts) String() string {
 // BOT CONTACT
 
 type BotContact struct {
-	Carma int
-	Tags  string
+	Carma carma.Carma
+	Tags  tags.UniqueTags
 }
 
 func (bc BotContact) String() string {

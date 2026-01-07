@@ -43,7 +43,7 @@ func New(
 	// Authorize as bot
 	b, err := tg.NewBotAPI(keyAPI)
 	if err != nil {
-		log.Panicf("%v: %v", ErrAuth, err)
+		log.Fatalf("%v: %v", ErrAuth, err)
 	}
 
 	// Get bot names
@@ -200,6 +200,8 @@ func (bot *Bot) reply(
 ) *messaging.MessageInfo {
 	var replyInfo *messaging.MessageInfo
 
+	log.Printf("[bot] %s replies message", bot.UserName)
+
 	// Type until reply
 	typingCtx, cancel := context.WithCancel(ctx)
 	go messaging.Type(typingCtx, bot.API, chatInfo)
@@ -221,5 +223,7 @@ func (bot *Bot) reflect(
 	model *model.Model,
 	chatInfo *messaging.ChatInfo,
 ) {
+	log.Printf("[bot] %s reflects on message", bot.UserName)
+
 	model.Reflect(ctx, chatInfo.LastMsg)
 }

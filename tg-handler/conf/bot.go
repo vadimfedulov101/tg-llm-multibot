@@ -7,6 +7,14 @@ import (
 	"os"
 )
 
+// Bot config errors
+var (
+	ErrBReadFailed           = errors.New("[conf] read bot config failed")
+	ErrBUnmarshalFailed      = errors.New("[conf] unmarshal bot config failed")
+	ErrBNegativeCandidateNum = errors.New("[conf] negative candidate number")
+	ErrBNegativeRateNum      = errors.New("[conf] negative rate number")
+)
+
 // Bot config
 type BotConf struct {
 	Main     MainSettings     `json:"bot_conf"`
@@ -29,16 +37,6 @@ type OptionalSettings struct {
 	Seed          int     `json:"seed,omitempty"`
 }
 
-// Bot config errors
-var (
-	ErrBConfReadFailed = errors.New(
-		"[conf] read bot config failed",
-	)
-	ErrBConfUnmarshalFailed = errors.New(
-		"[conf] unmarshal bot config failed",
-	)
-)
-
 // Loads settings or panics
 func MustLoadBotConf(confPath string) *BotConf {
 	var botConf BotConf
@@ -46,14 +44,24 @@ func MustLoadBotConf(confPath string) *BotConf {
 	// Read JSON data from file
 	data, err := os.ReadFile(confPath)
 	if err != nil {
-		log.Panicf("%v: %v", ErrBConfReadFailed, err)
+		log.Panicf("%v: %v", ErrBReadFailed, err)
 	}
 
 	// Decode JSON data to settings
 	err = json.Unmarshal(data, &botConf)
 	if err != nil {
-		log.Panicf("%v: %v", ErrBConfUnmarshalFailed, err)
+		log.Panicf("%v: %v", ErrBUnmarshalFailed, err)
 	}
 
+	// Validate numbers or panic
+	mustValidateCandidateNum(&botConf)
+
 	return &botConf
+}
+
+// Validates candidate num or panics
+func mustValidateCandidateNum(conf *BotConf) {
+	if conf.Main.CandidateNum < 0 {
+		log.Panic(ErrBNegativeCandidateNum)
+	}
 }

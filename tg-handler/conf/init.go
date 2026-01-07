@@ -12,18 +12,10 @@ import (
 
 // Initialization config errors
 var (
-	ErrIConfReadFailed = errors.New(
-		"[conf] read init config failed",
-	)
-	ErrIConfUnmarshalFailed = errors.New(
-		"[conf] unmarshal init config failed",
-	)
-	ErrIConfEmptyTemplate = errors.New(
-		"[conf] empty template",
-	)
-	ErrIConfWrongPlaceholderNum = errors.New(
-		"[conf] wrong placeholder number",
-	)
+	ErrIReadFailed        = errors.New("[conf] read init config failed")
+	ErrIUnmarshalFailed   = errors.New("[conf] unmarshal init config failed")
+	ErrIEmptyTemplate     = errors.New("[conf] empty template")
+	ErrIWrongPlaceholders = errors.New("[conf] wrong placeholder number")
 )
 
 // Initialization config
@@ -95,22 +87,26 @@ func MustLoadInitConf(confPath string) *InitConf {
 	// Read JSON data from file
 	data, err := os.ReadFile(confPath)
 	if err != nil {
-		log.Panicf("%v (%s): %v", ErrIConfReadFailed, confPath, err)
+		log.Panicf(
+			"%v (%s): %v", ErrIReadFailed, confPath, err,
+		)
 	}
 
 	// Decode JSON data to InitConf
 	err = json.Unmarshal(data, &initConf)
 	if err != nil {
-		log.Panicf("%v (%s): %v", ErrIConfUnmarshalFailed, confPath, err)
+		log.Panicf(
+			"%v (%s): %v", ErrIUnmarshalFailed, confPath, err,
+		)
 	}
 
-	// Validate templates or panic
+	// Validate prompt templates or panic
 	mustValidateTemplates(&initConf.BotSettings.PromptTemplates)
 
 	return &initConf
 }
 
-// Validates prompts
+// Validates prompt templates
 func mustValidateTemplates(templates *PromptTemplates) {
 	mustValidateResponseTemplate(templates.Response)
 	mustValidateSelectTemplate(templates.Select)
@@ -127,7 +123,7 @@ func mustValidateResponseTemplate(template string) {
 // Validates select template or panics
 func mustValidateSelectTemplate(template string) {
 	const tType = "select template"
-	mustValidateNumOf(template, "%s", 3, tType)
+	mustValidateNumOf(template, "%s", 4, tType)
 	mustValidateNumOf(template, "%d", 1, tType)
 }
 
@@ -154,7 +150,7 @@ func mustValidateNumOf(
 
 	// Handle empty template
 	if template == "" {
-		log.Panicf("%v", ErrIConfEmptyTemplate)
+		log.Panicf("%v", ErrIEmptyTemplate)
 	}
 
 	// Count s in template
@@ -170,7 +166,7 @@ func mustValidateNumOf(
 	if err != nil {
 		log.Panicf(
 			"%v: %v: \"%s\"",
-			ErrIConfWrongPlaceholderNum, err, template,
+			ErrIWrongPlaceholders, err, template,
 		)
 	}
 }
