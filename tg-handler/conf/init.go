@@ -10,12 +10,26 @@ import (
 	"time"
 )
 
+// Placeholder numbers for templates
+const (
+	responseSNum = 3
+
+	selectSNum = 4
+	selectDNum = 1
+
+	tagsSNum = 7
+	tagsDNum = 1
+
+	carmaSNum = 5
+	carmaDNum = 1
+)
+
 // Initialization config errors
 var (
-	ErrIReadFailed        = errors.New("[conf] read init config failed")
-	ErrIUnmarshalFailed   = errors.New("[conf] unmarshal init config failed")
-	ErrIEmptyTemplate     = errors.New("[conf] empty template")
-	ErrIWrongPlaceholders = errors.New("[conf] wrong placeholder number")
+	errIReadFailed          = errors.New("[conf] read init config failed")
+	errIUnmarshalFailed     = errors.New("[conf] unmarshal init config failed")
+	errIEmptyTemplate       = errors.New("[conf] empty template")
+	errIWrongPlaceholderNum = errors.New("[conf] wrong placeholder number")
 )
 
 // Initialization config
@@ -88,7 +102,7 @@ func MustLoadInitConf(confPath string) *InitConf {
 	data, err := os.ReadFile(confPath)
 	if err != nil {
 		log.Panicf(
-			"%v (%s): %v", ErrIReadFailed, confPath, err,
+			"%v (%s): %v", errIReadFailed, confPath, err,
 		)
 	}
 
@@ -96,7 +110,7 @@ func MustLoadInitConf(confPath string) *InitConf {
 	err = json.Unmarshal(data, &initConf)
 	if err != nil {
 		log.Panicf(
-			"%v (%s): %v", ErrIUnmarshalFailed, confPath, err,
+			"%v (%s): %v", errIUnmarshalFailed, confPath, err,
 		)
 	}
 
@@ -116,57 +130,51 @@ func mustValidateTemplates(templates *PromptTemplates) {
 
 // Validates response template or panics
 func mustValidateResponseTemplate(template string) {
-	const tType = "response template"
-	mustValidateNumOf(template, "%s", 3, tType)
+	const tType = "response"
+	mustValidateNumOf(template, "%s", responseSNum, tType)
 }
 
 // Validates select template or panics
 func mustValidateSelectTemplate(template string) {
-	const tType = "select template"
-	mustValidateNumOf(template, "%s", 4, tType)
-	mustValidateNumOf(template, "%d", 1, tType)
+	const tType = "select"
+	mustValidateNumOf(template, "%s", selectSNum, tType)
+	mustValidateNumOf(template, "%d", selectDNum, tType)
 }
 
 // Validates note template or panics
 func mustValidateTagsTemplate(template string) {
-	const tType = "tags template"
-	mustValidateNumOf(template, "%s", 7, tType)
-	mustValidateNumOf(template, "%d", 1, tType)
+	const tType = "tags"
+	mustValidateNumOf(template, "%s", tagsSNum, tType)
+	mustValidateNumOf(template, "%d", tagsDNum, tType)
 }
 
 // Validates all templates or panics
 func mustValidateCarmaTemplate(template string) {
-	const tType = "carma template"
-	mustValidateNumOf(template, "%s", 5, tType)
-	mustValidateNumOf(template, "%d", 1, tType)
+	const tType = "carma"
+	mustValidateNumOf(template, "%s", carmaSNum, tType)
+	mustValidateNumOf(template, "%d", carmaDNum, tType)
 }
 
-// Validates that 'template' of 'tType'
-// contains 's' exactly 'n' times or panics.
+// Validates number of template placeholders or panic
 func mustValidateNumOf(
-	template string, s string, n int, tType string,
+	template string, placeholder string, n int, tType string,
 ) {
-	var err error
-
 	// Handle empty template
 	if template == "" {
-		log.Panicf("%v", ErrIEmptyTemplate)
+		log.Panicf("%v", errIEmptyTemplate)
 	}
 
-	// Count s in template
-	num := strings.Count(template, s)
-	// Detect errors
+	// Set placeholder error
+	var err error = fmt.Errorf(
+		"%w in %s template", errIWrongPlaceholderNum, tType,
+	)
+
+	// Check placeholder number or panic
+	num := strings.Count(template, placeholder)
 	if num < n {
-		err = fmt.Errorf("less than %d %s in %s", n, s, tType)
+		log.Fatalf("%v: less than %d %s", err, n, placeholder)
 	}
 	if num > n {
-		err = fmt.Errorf("more than %d %s in %s", n, s, tType)
-	}
-	// Panic on error
-	if err != nil {
-		log.Panicf(
-			"%v: %v: \"%s\"",
-			ErrIWrongPlaceholders, err, template,
-		)
+		log.Fatalf("%v: more than %d %s", err, n, placeholder)
 	}
 }

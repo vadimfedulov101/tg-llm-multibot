@@ -7,6 +7,7 @@ import (
 
 type Candidates []string
 
+// Candidates in human-readable format
 func (cs Candidates) String() (s string) {
 	var sb strings.Builder
 
@@ -17,4 +18,9 @@ func (cs Candidates) String() (s string) {
 	}
 
 	return sb.String()
+}
+
+// Value returned in case of tries exhaustion
+func (cs Candidates) Fallback() string {
+	return cs[0]
 }

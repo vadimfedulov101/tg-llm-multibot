@@ -6,47 +6,42 @@ import (
 	"strings"
 )
 
+// Tags errors
 var (
-	ErrTagInvalid = errors.New(
-		"tag does not start with '#'",
+	errEmptyRawTagsString = errors.New(
+		"[tags] empto raw tags string",
+	)
+	errZeroTags = errors.New(
+		"[tags] zero tags",
+	)
+	errTagNoHashSign = errors.New(
+		"[tags] tag does not start with '#'",
 	)
 )
 
-// Tag is stored in memory WITHOUT the '#' prefix to save space.
-type Tag string
+// --- PUBLIC TAGS COLLECTION ---
 
-func newTag(s string) (Tag, error) {
-	if strings.HasPrefix(s, "#") {
-		// Valid tag: strip the '#' and store the rest
-		return Tag(s[1:]), nil
+type Tags []tag
+
+// Parses string from LLM and accumulates unique tags from it
+func New(s string, lim int) (Tags, error) {
+	// Handle empty raw tags string
+	if s == "" {
+		return nil, errEmptyRawTagsString
 	}
-	return "", ErrTagInvalid
-}
 
-// String adds the '#' back for display purposes (logs, etc.)
-func (t Tag) String() string {
-	return "#" + string(t)
-}
+	var tags []tag
 
-// --- UNIQUE TAGS COLLECTION ---
-
-type UniqueTags []Tag
-
-// NewUniqueTags is for USER INPUT.
-// It parses raw string, validates '#' prefix, strips it, dedupes, and applies limit.
-func NewUniqueTags(s string, lim int) UniqueTags {
-	var tags []Tag
-
-	// Get raw tags slice
+	// Get raw tags
 	rawTags := strings.Fields(s)
 
 	// Accumulate unique tags
-	seen := make(map[Tag]bool)
+	seen := make(map[tag]bool)
 	for _, rawTag := range rawTags {
-		// Try to get tag (validates '#' and strips it)
+		// Try to get tag
 		tag, err := newTag(rawTag)
 
-		// Skip invalid
+		// Skip non-tags
 		if err != nil {
 			log.Println(err)
 			continue
@@ -57,23 +52,52 @@ func NewUniqueTags(s string, lim int) UniqueTags {
 			continue
 		}
 
-		// Add new tag
+		// Add unique tag
 		seen[tag] = true
 		tags = append(tags, tag)
 
-		// Stop if limit reached
+		// Stop on limit
 		if len(tags) >= lim {
 			break
 		}
 	}
 
-	return tags
+	// Check if non-zero tags
+	if len(tags) < 1 {
+		return nil, errZeroTags
+	}
+
+	return tags, nil
 }
 
-// DeserializeUniqueTags is for DB/PROTO LOADING.
-// It converts a raw space-separated string (no '#') back into UniqueTags.
-// It trusts the input and skips validation.
-func DeserializeUniqueTags(s string) UniqueTags {
+// Tags in human-readable format
+func (tags Tags) String() string {
+	var sb strings.Builder
+	for i, tag := range tags {
+		if i > 0 {
+			sb.WriteString(" ")
+		}
+		// String() appends '#' prefix
+		sb.WriteString(tag.String())
+	}
+	return sb.String()
+}
+
+// Tags in machine-readable fromat
+func (tags Tags) Serialize() string {
+	var sb strings.Builder
+	for i, tag := range tags {
+		if i > 0 {
+			sb.WriteString(" ")
+		}
+		// string() bypasses String() method not adding '#' prefix
+		sb.WriteString(string(tag))
+	}
+	return sb.String()
+}
+
+// Tags from machine-readable format
+func DeserializeTags(s string) Tags {
 	if s == "" {
 		return nil
 	}
@@ -81,39 +105,35 @@ func DeserializeUniqueTags(s string) UniqueTags {
 	// Get raw tags
 	rawTags := strings.Fields(s)
 
-	// We cast directly to Tag(rt) because we trust the DB contains clean names
-	tags := make(UniqueTags, 0, len(rawTags))
-	for _, rt := range rawTags {
-		tags = append(tags, Tag(rt))
+	// Accumulate tags casted from raw tags
+	tags := make(Tags, 0, len(rawTags))
+	for _, rawTag := range rawTags {
+		// Cast directly with trust in type check
+		tag := tag(rawTag)
+		// Append to tags
+		tags = append(tags, tag)
 	}
 
 	return tags
 }
 
-// Serialize returns the string WITHOUT brackets and '#' signs.
-// Use this for saving to Proto/Database.
-func (ts UniqueTags) Serialize() string {
-	var sb strings.Builder
-	for i, t := range ts {
-		if i > 0 {
-			sb.WriteString(" ")
-		}
-		// string(t) bypasses the String() method, giving the raw text ("cool")
-		sb.WriteString(string(t))
-	}
-	return sb.String()
+func Fallback() Tags {
+	return Tags{"unknown"}
 }
 
-// String returns the string WITHOUT brackets but WITH '#' signs.
-// Use this for printing to logs or showing the user.
-func (ts UniqueTags) String() string {
-	var sb strings.Builder
-	for i, t := range ts {
-		if i > 0 {
-			sb.WriteString(" ")
-		}
-		// t.String() adds the hash back ("#cool")
-		sb.WriteString(t.String())
+// --- PRIVATE TAGS TYPE ---
+
+type tag string
+
+// Tag starts with '#': dropped for memory, implied for printing
+func newTag(s string) (tag, error) {
+	if strings.HasPrefix(s, "#") {
+		return tag(s[1:]), nil
 	}
-	return sb.String()
+	return "", errTagNoHashSign
+}
+
+// Tag in human-readable format
+func (t tag) String() string {
+	return "#" + string(t)
 }

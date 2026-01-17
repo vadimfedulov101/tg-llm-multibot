@@ -6,33 +6,36 @@ import (
 )
 
 const (
-	Min = 0
+	Min = -100
 	Max = 100
 )
 
 // Carma errors
 var (
-	ErrCarmaOOB = errors.New("[carma] out of bounds")
+	ErrCarmaOOB      = errors.New("[carma] carma out of bounds")
+	ErrCarmaBelowMin = fmt.Errorf("below minimum value of %d", Min)
+	ErrCarmaOverMax  = fmt.Errorf("over maximum value of %d", Max)
 
-	ErrCarmaBelowMin = errors.New("carma below minimum value")
-	ErrCarmaOverMax  = errors.New("carma over maximum value")
-
-	ErrCarmaUpdateOOV = errors.New("carma update out of variants")
+	ErrCarmaUpdateOOV = errors.New(
+		"[carma] carma update out of variants",
+	)
 )
 
 type Carma int
 
-func New(n int) (Carma, error) {
-	// Check bounds
+func New(n int) (*Carma, error) {
 	var err = ErrCarmaOOB
+
+	// Abide bounds
 	if n < Min {
-		return Carma(n), fmt.Errorf("%w: %v", err, ErrCarmaBelowMin)
+		return nil, fmt.Errorf("%w: %v", err, ErrCarmaBelowMin)
 	}
 	if n > Max {
-		return Carma(n), fmt.Errorf("%w: %v", err, ErrCarmaOverMax)
+		return nil, fmt.Errorf("%w: %v", err, ErrCarmaOverMax)
 	}
 
-	return Carma(n), nil
+	c := Carma(n)
+	return &c, nil
 }
 
 type Update int
@@ -45,14 +48,14 @@ const (
 )
 
 // To string
-var UpdateName = map[Update]string{
+var UpdateTag = map[Update]string{
 	UpdateNegative: "-",
 	UpdateNeutral:  "=",
 	UpdatePositive: "+",
 }
 
 func (u Update) String() string {
-	return UpdateName[u]
+	return UpdateTag[u]
 }
 
 // From string
@@ -69,23 +72,26 @@ func NewUpdate(s string) (Update, error) {
 	}
 }
 
-// Apply update to carma
+// Apply carma update
 func (c *Carma) Apply(u Update) {
 	// Calculate new value
 	newVal := int(*c) + int(u)
 
-	// Limit to minimum
+	// Abide saturation
 	if newVal < Min {
 		*c = Carma(Min)
 		return
 	}
-
-	// Limit to maximum
 	if newVal > Max {
 		*c = Carma(Max)
 		return
 	}
 
-	// 4. Set valid value
+	// Set new value
 	*c = Carma(newVal)
+}
+
+// Value used in case of generation failure
+func Fallback() Update {
+	return UpdateNeutral
 }

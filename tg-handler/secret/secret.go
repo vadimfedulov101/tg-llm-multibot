@@ -14,16 +14,16 @@ const (
 // Secret errors
 var (
 	ErrGetEnvFailed = errors.New(
-		"Failed to get '" + envVar + "' environment variable",
+		"[secret] failed to get '" + envVar + "' environment variable",
 	)
 	ErrReadFileFailed = errors.New(
-		"Failed to read '%s' file",
+		"[secret] failed to read '%s' file",
 	)
 	ErrEmptyKeysStr = errors.New(
-		"Got empty keys string from '%s' file",
+		"[secret] got empty keys string from '%s' file",
 	)
 	ErrZeroKeys = errors.New(
-		"Got zero keys from '%s' file",
+		"[secret] got zero keys from '%s' file",
 	)
 )
 
@@ -41,23 +41,25 @@ func MustLoadAPIKeys() []string {
 		log.Fatalf("%v: %v", ErrReadFileFailed, err)
 	}
 
+	// Get non-empty keys string
 	keysStr := string(content)
 	if strings.TrimSpace(keysStr) == "" {
 		log.Fatal(ErrEmptyKeysStr)
 	}
 
-	// Split by newline and clean up
+	// Split into raw lines by "\n"
 	rawLines := strings.Split(keysStr, "\n")
-	var keys []string
 
-	for _, line := range rawLines {
-		// TrimSpace removes \t, \n, \r, and spaces
-		cleaned := strings.TrimSpace(line)
-		if cleaned != "" {
-			keys = append(keys, cleaned)
+	// Accumulate keys as cleaned lines
+	var keys []string
+	for _, rawLine := range rawLines {
+		cleanedLine := strings.TrimSpace(rawLine)
+		if cleanedLine != "" {
+			keys = append(keys, cleanedLine)
 		}
 	}
 
+	// Check if got non-zero keys
 	if len(keys) < 1 {
 		log.Fatal(ErrZeroKeys)
 	}

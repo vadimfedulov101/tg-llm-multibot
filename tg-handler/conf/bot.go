@@ -9,10 +9,9 @@ import (
 
 // Bot config errors
 var (
-	ErrBReadFailed           = errors.New("[conf] read bot config failed")
-	ErrBUnmarshalFailed      = errors.New("[conf] unmarshal bot config failed")
-	ErrBNegativeCandidateNum = errors.New("[conf] negative candidate number")
-	ErrBNegativeRateNum      = errors.New("[conf] negative rate number")
+	errBReadFailed           = errors.New("[conf] read bot config failed")
+	errBUnmarshalFailed      = errors.New("[conf] unmarshal bot config failed")
+	errBNegativeCandidateNum = errors.New("[conf] negative candidate number")
 )
 
 // Bot config
@@ -44,16 +43,16 @@ func MustLoadBotConf(confPath string) *BotConf {
 	// Read JSON data from file
 	data, err := os.ReadFile(confPath)
 	if err != nil {
-		log.Panicf("%v: %v", ErrBReadFailed, err)
+		log.Fatalf("%v: %v", errBReadFailed, err)
 	}
 
 	// Decode JSON data to settings
 	err = json.Unmarshal(data, &botConf)
 	if err != nil {
-		log.Panicf("%v: %v", ErrBUnmarshalFailed, err)
+		log.Fatalf("%v: %v", errBUnmarshalFailed, err)
 	}
 
-	// Validate numbers or panic
+	// Validate candidate number or panic
 	mustValidateCandidateNum(&botConf)
 
 	return &botConf
@@ -62,6 +61,6 @@ func MustLoadBotConf(confPath string) *BotConf {
 // Validates candidate num or panics
 func mustValidateCandidateNum(conf *BotConf) {
 	if conf.Main.CandidateNum < 0 {
-		log.Panic(ErrBNegativeCandidateNum)
+		log.Fatal(errBNegativeCandidateNum)
 	}
 }
