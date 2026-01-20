@@ -104,7 +104,7 @@ func (bcs BotContacts) String() string {
 
 type BotContact struct {
 	Carma carma.Carma
-	Tags  tags.UniqueTags
+	Tags  tags.Tags
 }
 
 func (bc BotContact) String() string {

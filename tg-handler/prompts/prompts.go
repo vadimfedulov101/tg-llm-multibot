@@ -27,6 +27,7 @@ func New(
 	senderP SenderProvider,
 	botName string,
 	chatTitle string,
+	candidateNum int,
 ) *Prompts {
 	var (
 		// Get templates
@@ -49,9 +50,15 @@ func New(
 		Response: fmtResponsePrompt(
 			responseTemplate, memory, names, chatTitle,
 		),
-		Select: fmtSelectPrompt(selectTemplate, memory, names),
-		Tags:   fmtTagsPrompt(tagsTemplate, memory, names, tagsLimit),
-		Carma:  fmtCarmaPrompt(carmaTemplate, memory, names),
+		Select: fmtSelectPrompt(
+			selectTemplate, memory, names, candidateNum,
+		),
+		Tags: fmtTagsPrompt(
+			tagsTemplate, memory, names, tagsLimit,
+		),
+		Carma: fmtCarmaPrompt(
+			carmaTemplate, memory, names,
+		),
 	}
 }
 
@@ -70,17 +77,17 @@ func NewNames(bot string, user string) *Names {
 
 // Finalizes select prompt formatting
 func FinFmtSelectPrompt(prompt string, candidates []string) string {
-	return fmt.Sprintf(prompt, candidates, len(candidates))
+	return fmt.Sprintf(prompt, candidates)
 }
 
 // Finalizes tags prompt formatting
-func FinFmtTagsPrompt(prompt string, botReply string) string {
-	return fmt.Sprintf(prompt, botReply)
+func FinFmtTagsPrompt(prompt string, replyLine string) string {
+	return fmt.Sprintf(prompt, replyLine)
 }
 
 // Finalizes carma prompt formatting
-func FinFmtCarmaPrompt(prompt string, botReply string) string {
-	return fmt.Sprintf(prompt, botReply)
+func FinFmtCarmaPrompt(prompt string, replyLine string) string {
+	return fmt.Sprintf(prompt, replyLine)
 }
 
 // Formats response prompt
@@ -92,8 +99,8 @@ func fmtResponsePrompt(
 ) string {
 	var botName = names.Bot
 
-	return fmt.Sprintf(
-		template, botName, chatTitle, memory, names.Bot,
+	return fmt.Sprintf(template,
+		botName, chatTitle, memory, names.Bot,
 	)
 }
 
@@ -102,13 +109,14 @@ func fmtSelectPrompt(
 	template string,
 	memory *memory.Memory,
 	names *Names,
+	candidateNum int,
 ) string {
 	var botName = names.Bot
 
-	return fmt.Sprintf(
-		template, botName, memory,
+	return fmt.Sprintf(template,
+		botName, memory,
 		"%s", // Response candidates placeholder
-		"%d", // Candidate number placeholder
+		candidateNum,
 	)
 }
 
@@ -125,8 +133,8 @@ func fmtTagsPrompt(
 		contact  = memory.BotContacts.Get(userName)
 	)
 
-	return fmt.Sprintf(
-		template, userName, botName, memory,
+	return fmt.Sprintf(template,
+		userName, botName, memory,
 		"%s", // Final response placeholder
 		userName, contact.Tags,
 		userName, lim,
@@ -146,8 +154,8 @@ func fmtCarmaPrompt(
 		contact  = memory.BotContacts.Get(userName)
 	)
 
-	return fmt.Sprintf(
-		template, userName, botName, memory,
+	return fmt.Sprintf(template,
+		userName, botName, memory,
 		"%s", // Final response placeholder
 		userName, contact.Carma,
 	)

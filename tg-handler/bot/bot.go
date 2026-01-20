@@ -17,8 +17,7 @@ import (
 
 // Bot errors
 var (
-	ErrAuth      = errors.New("[bot] authorization failed")
-	ErrFailReply = errors.New("[bot] failed to reply")
+	errAuthFailed = errors.New("[bot] authorization failed")
 )
 
 type Bot struct {
@@ -43,7 +42,7 @@ func New(
 	// Authorize as bot
 	b, err := tg.NewBotAPI(keyAPI)
 	if err != nil {
-		log.Fatalf("%v: %v", ErrAuth, err)
+		log.Fatalf("%v: %v", errAuthFailed, err)
 	}
 
 	// Get bot names
@@ -117,13 +116,15 @@ func (bot *Bot) Start(ctx context.Context) {
 	for {
 		select {
 		case update, ok := <-updates:
-			if !ok { // Check if updates channel closed
+			if !ok {
 				log.Printf(
 					"[bot] %s update channel closed", bot.UserName,
 				)
 				return
 			}
+
 			bot.handleUpdate(ctx, update)
+
 		case <-ctx.Done():
 			log.Printf(
 				"[bot] %s received shutdown signal", bot.UserName,
@@ -163,10 +164,10 @@ func (bot *Bot) handleMessage(
 ) {
 	log.Printf("[bot] %s got message", bot.UserName)
 
-	// Add message to history
+	// Record new message to history
 	chatInfo.History.AddToBoth(chatInfo.LastMsg)
 
-	// Get memory
+	// Create memory
 	memory := memory.New(
 		chatInfo.History, bot.Contacts,
 		chatInfo.LastMsg, &bot.Settings.MemoryLimits,
@@ -181,11 +182,11 @@ func (bot *Bot) handleMessage(
 	go func() {
 		// Reply
 		replyInfo := bot.reply(ctx, model, chatInfo)
+		// Record reply to history
 		chatInfo.History.AddToBoth(replyInfo)
 
 		// Reflect on reply
-		chatInfo.LastMsg = replyInfo
-		bot.reflect(ctx, model, chatInfo)
+		bot.reflect(ctx, model, chatInfo.LastMsg.Sender(), replyInfo)
 
 		// Send update signal
 		bot.UpdSignalCh <- struct{}{}
@@ -200,7 +201,9 @@ func (bot *Bot) reply(
 ) *messaging.MessageInfo {
 	var replyInfo *messaging.MessageInfo
 
-	log.Printf("[bot] %s replies message", bot.UserName)
+	log.Printf(
+		"[bot] %s replies to message", bot.UserName,
+	)
 
 	// Type until reply
 	typingCtx, cancel := context.WithCancel(ctx)
@@ -221,9 +224,12 @@ func (bot *Bot) reply(
 func (bot *Bot) reflect(
 	ctx context.Context,
 	model *model.Model,
-	chatInfo *messaging.ChatInfo,
+	user string,
+	replyInfo *messaging.MessageInfo,
 ) {
-	log.Printf("[bot] %s reflects on message", bot.UserName)
+	log.Printf(
+		"[bot] %s reflects on message", bot.UserName,
+	)
 
-	model.Reflect(ctx, chatInfo.LastMsg)
+	model.Reflect(ctx, user, replyInfo)
 }

@@ -12,16 +12,17 @@ import (
 
 // Placeholder numbers for templates
 const (
-	responseSNum = 3
+	responseSNum = 4
+	responseDNum = 0
 
-	selectSNum = 4
+	selectSNum = 3
 	selectDNum = 1
 
 	tagsSNum = 7
 	tagsDNum = 1
 
-	carmaSNum = 5
-	carmaDNum = 1
+	carmaSNum = 6
+	carmaDNum = 0
 )
 
 // Initialization config errors
@@ -132,6 +133,7 @@ func mustValidateTemplates(templates *PromptTemplates) {
 func mustValidateResponseTemplate(template string) {
 	const tType = "response"
 	mustValidateNumOf(template, "%s", responseSNum, tType)
+	mustValidateNumOf(template, "%d", responseDNum, tType)
 }
 
 // Validates select template or panics

@@ -29,11 +29,11 @@ func New(s string, lim int) (SelectIdx, error) {
 	idx := num - 1
 
 	// Check index bounds
-	if idx < 0 || idx > lim {
+	if idx < 0 || idx >= lim {
 		return 0, ErrSelectIdxOOB
 	}
 
-	return SelectIdx(num), nil
+	return SelectIdx(idx), nil
 }
 
 // Select index in human-readable format

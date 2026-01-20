@@ -9,7 +9,7 @@ import (
 // Tags errors
 var (
 	errEmptyRawTagsString = errors.New(
-		"[tags] empto raw tags string",
+		"[tags] empty raw tags string",
 	)
 	errZeroTags = errors.New(
 		"[tags] zero tags",
@@ -25,7 +25,7 @@ type Tags []tag
 
 // Parses string from LLM and accumulates unique tags from it
 func New(s string, lim int) (Tags, error) {
-	// Handle empty raw tags string
+	// Handle empty string
 	if s == "" {
 		return nil, errEmptyRawTagsString
 	}

@@ -97,9 +97,10 @@ func sendRequestEternal(ctx context.Context, request *Request) string {
 	}
 
 	// Clean text
+	log.Println("Raw text:", text)
 	text = trimNoise(text)
+	log.Println("Cleaned text:", text)
 
-	log.Println("Cleaned text: ", text)
 	return text
 }
 

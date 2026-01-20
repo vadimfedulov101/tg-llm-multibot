@@ -15,7 +15,7 @@ import (
 
 // Cleaner errors
 var (
-	ErrSaveFailed = errors.New(
+	errSaveFailed = errors.New(
 		"[history] cleaner failed to save history",
 	)
 )
@@ -84,7 +84,7 @@ func (h *History) Cleaner(
 			}
 			// Save (skip extra context check)
 			if err := h.Save(path); err != nil {
-				log.Printf("%v: %v", ErrSaveFailed, err)
+				log.Printf("%v: %v", errSaveFailed, err)
 			}
 		case <-ctx.Done():
 			log.Println(ctxDoneMsg + opWaiting)
@@ -117,7 +117,7 @@ func (h *History) clean(
 		return jobSender(gctx, jobs, jobsChan, &logSendingOnce)
 	})
 
-	// START clean workers (job receivers)
+	// START job receivers (clean workers)
 	workerCount := min(runtime.GOMAXPROCS(0), len(jobs))
 	for workerID := range workerCount {
 		g.Go(func() error {
@@ -139,21 +139,23 @@ func (h *History) collectCleanJobs() []CleanJob {
 		bots = h.Bots
 	)
 
-	// Firstly add SHARED chat queues to jobs
+	// Add SHARED chat queues to jobs
 	for _, scq := range scqs {
 		jobs = append(jobs, CleanJob{
 			ChatQueue: scq,
 		})
 	}
 
-	// Secondly add LOCAL chat queues & reply chains to jobs
+	// Add LOCAL chat queues & reply chains to jobs
 	bots.mu.RLock()
 	defer bots.mu.RUnlock()
-	for _, botData := range bots.History { // All safe bot data's
-		sbh := botData.History // All safe bot histories
+	// Iterate over bot data
+	for _, botData := range bots.History {
+		sbh := botData.History // Omit contacts
 
 		sbh.mu.RLock()
-		for _, sch := range sbh.History { // All safe chat histories
+		// Iterate over chat histories
+		for _, sch := range sbh.History {
 			chatQueue, replyChains := sch.ChatQueue, sch.ReplyChains
 
 			// Add local chat queue to jobs
@@ -165,7 +167,7 @@ func (h *History) collectCleanJobs() []CleanJob {
 			}
 			chatQueue.mu.RUnlock()
 
-			// Add reply chains to jobs (always local)
+			// Add reply chains to jobs
 			replyChains.mu.RLock()
 			jobs = append(jobs, CleanJob{
 				ReplyChains: replyChains,
@@ -179,7 +181,7 @@ func (h *History) collectCleanJobs() []CleanJob {
 	return jobs
 }
 
-// Sends jobs to job channel with context
+// Sends jobs to channel with group context
 func jobSender(
 	gctx context.Context,
 	jobs []CleanJob,
@@ -193,7 +195,7 @@ func jobSender(
 	for _, job := range jobs {
 		select {
 		case jobsChan <- job:
-		case <-gctx.Done(): // done for all workers
+		case <-gctx.Done(): // all workers done
 			logSendingOnce.Do(func() { // log only first time
 				log.Println(ctxDoneMsg + opSendingJobs)
 			})
@@ -204,7 +206,7 @@ func jobSender(
 	return nil
 }
 
-// Gets clean jobs with context and performs them
+// Gets clean jobs with group context and performs them
 func (h *History) cleanWorker(
 	gctx context.Context,
 	workerID int,
@@ -213,11 +215,11 @@ func (h *History) cleanWorker(
 	messageTTL time.Duration,
 	logGettingOnce *sync.Once,
 ) error {
-	// GET jobs until jobs channel CLOSED or group context DONE
+	// GET jobs until channel CLOSED or group context DONE
 	for processed := 0; ; processed++ {
 		select {
 		case job, ok := <-jobsChan:
-			if !ok { // channel closed
+			if !ok {
 				log.Println("[cleaner] jobs channel closed")
 				log.Printf(
 					"[cleaner] worker %d processed %d jobs",
@@ -229,7 +231,7 @@ func (h *History) cleanWorker(
 			// Perform clean job
 			job.perform(currentTime, messageTTL)
 
-		case <-gctx.Done(): // done for all workers
+		case <-gctx.Done(): // all workers done
 			logGettingOnce.Do(func() { // log only first time
 				log.Println(ctxDoneMsg + opGettingJobs)
 			})

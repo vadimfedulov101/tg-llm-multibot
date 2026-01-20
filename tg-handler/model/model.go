@@ -61,9 +61,12 @@ func New(
 	botName string,
 	chatTitle string,
 ) *Model {
+	var candidateNum = botConf.Main.CandidateNum
+
 	// Format prompts from templates
 	prompts := prompts.New(
-		promptTemplates, memory, lastMsg, botName, chatTitle,
+		promptTemplates,
+		memory, lastMsg, botName, chatTitle, candidateNum,
 	)
 
 	return &Model{
@@ -77,7 +80,7 @@ func New(
 
 // Reacts to new message
 func (m *Model) React(ctx context.Context) string {
-	candidates := m.generateCandidates(ctx)
+	candidates := m.genCandidates(ctx)
 	bestCandidate := m.selectBestCandidate(ctx, candidates)
 	return bestCandidate
 }
@@ -85,30 +88,30 @@ func (m *Model) React(ctx context.Context) string {
 // Reflects on response
 func (m *Model) Reflect(
 	ctx context.Context,
-	msg Message,
+	user string,
+	reply Message,
 ) {
 	var (
-		sender      = msg.Sender()
 		botContacts = m.Memory.BotContacts
 	)
 
-	// Get bot contact to update
-	botContact := botContacts.Get(sender)
+	// Get contact to update
+	botContact := botContacts.Get(user)
 
 	// Update carma
-	carmaUpdate := m.generateCarmaUpdate(ctx, msg.Line())
+	carmaUpdate := m.genCarmaUpdate(ctx, reply.Line())
 	botContact.Carma.Apply(carmaUpdate)
 
 	// Update persona
-	tags := m.generateTags(ctx, msg.Line())
+	tags := m.genTags(ctx, reply.Line())
 	botContact.Tags = tags
 
-	// Reset bot contacts
-	botContacts.Set(sender, botContact)
+	// Reset contacts
+	botContacts.Set(user, botContact)
 }
 
 // Generates candidates
-func (m *Model) generateCandidates(ctx context.Context) []string {
+func (m *Model) genCandidates(ctx context.Context) []string {
 	var (
 		candidateNum = m.Config.Main.CandidateNum
 		candidates   = make([]string, 0, candidateNum)
@@ -169,7 +172,7 @@ func (m *Model) selectBestCandidate(
 
 		// Log success, return
 		if err == nil {
-			log.Println("%s: %s", tryStr, selectIdx)
+			log.Printf("%s: %s", tryStr, selectIdx)
 			return candidates[selectIdx]
 		}
 
@@ -185,14 +188,14 @@ func (m *Model) selectBestCandidate(
 }
 
 // Generates unique tags
-func (m *Model) generateTags(
+func (m *Model) genTags(
 	ctx context.Context,
-	line string,
+	replyLine string,
 ) tags.Tags {
 	const genType = "tags"
 
 	// Format prompt
-	prompt := prompts.FinFmtTagsPrompt(m.Prompts.Tags, line)
+	prompt := prompts.FinFmtTagsPrompt(m.Prompts.Tags, replyLine)
 	// Form request
 	request := newRequest(prompt, m.Config)
 
@@ -224,14 +227,14 @@ func (m *Model) generateTags(
 }
 
 // Generates carma update
-func (m *Model) generateCarmaUpdate(
+func (m *Model) genCarmaUpdate(
 	ctx context.Context,
-	line string,
+	replyLine string,
 ) carma.Update {
 	const genType = "carma update"
 
 	// Format prompt
-	prompt := prompts.FinFmtCarmaPrompt(m.Prompts.Carma, line)
+	prompt := prompts.FinFmtCarmaPrompt(m.Prompts.Carma, replyLine)
 	// Form request
 	request := newRequest(prompt, m.Config)
 
