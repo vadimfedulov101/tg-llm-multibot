@@ -2,20 +2,21 @@ package tags
 
 import (
 	"errors"
-	"log"
 	"strings"
+
+	"tg-handler/logging"
 )
 
 // Tags errors
 var (
 	errEmptyRawTagsString = errors.New(
-		"[tags] empty raw tags string",
+		"empty raw tags string",
 	)
 	errZeroTags = errors.New(
-		"[tags] zero tags",
+		"zero tags",
 	)
 	errTagNoHashSign = errors.New(
-		"[tags] tag does not start with '#'",
+		"tag does not start with '#'",
 	)
 )
 
@@ -24,7 +25,7 @@ var (
 type Tags []tag
 
 // Parses string from LLM and accumulates unique tags from it
-func New(s string, lim int) (Tags, error) {
+func New(s string, lim int, logger *logging.Logger) (Tags, error) {
 	// Handle empty string
 	if s == "" {
 		return nil, errEmptyRawTagsString
@@ -43,7 +44,9 @@ func New(s string, lim int) (Tags, error) {
 
 		// Skip non-tags
 		if err != nil {
-			log.Println(err)
+			logger.Error(
+				"failed to create a new tag", logging.Err(err),
+			)
 			continue
 		}
 

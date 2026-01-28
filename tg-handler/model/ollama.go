@@ -7,50 +7,48 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
-	"os"
 	"time"
 
 	"tg-handler/conf"
+	"tg-handler/logging"
 )
 
 // Ollama errors
 var (
-	ErrLoadEnvFailed = errors.New(
-		"[model] failed to load $LLM_MODEL from environment",
-	)
+	ErrCtxDone           = errors.New("context done")
+	errMarshalFailed     = errors.New("marshal request failed")
+	errRequestFailed     = errors.New("create request failed")
+	errSendFailed        = errors.New("send request failed")
+	errInvalidStatus     = errors.New("invalid status code")
+	errDecodeFailed      = errors.New("decode response failed")
+	errRequestIncomplete = errors.New("request not completed")
 )
-
-// Environment constant
-var model = getEnv("LLM_MODEL", ErrLoadEnvFailed)
-
-func getEnv(key string, err error) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return value
-	}
-
-	log.Fatal(err)
-	return ""
-}
 
 // Request to Ollama
 type Request struct {
 	Model        string                `json:"model"`
 	Prompt       string                `json:"prompt"`
 	Stream       bool                  `json:"stream"`
-	Options      conf.OptionalSettings `json:"options"`
 	SystemPrompt string                `json:"system,omitempty"`
+	Options      conf.OptionalSettings `json:"options"`
 	Context      []int                 `json:"context,omitempty"`
+	cleaner      func(string) string
 }
 
-func newRequest(prompt string, botConf *conf.BotConf) *Request {
+func newRequest(
+	prompt string,
+	model string,
+	botConf *conf.BotConf,
+	cleaner func(string) string,
+) *Request {
 	return &Request{
-		Model:        model, // Loaded from environment
+		Model:        model,
 		Prompt:       prompt,
 		Stream:       false,
 		SystemPrompt: botConf.Main.Role,
 		Options:      botConf.Optional,
+		cleaner:      cleaner,
 	}
 }
 
@@ -69,18 +67,12 @@ type Response struct {
 	EvalDuration       int64  `json:"eval_duration,omitempty"`
 }
 
-// Ollama errors
-var (
-	ErrMarshalFailed     = errors.New("[model] marshal request failed")
-	ErrRequestFailed     = errors.New("[model] create request failed")
-	ErrSendFailed        = errors.New("[model] send request failed")
-	ErrInvalidStatus     = errors.New("[model] invalid status code")
-	ErrDecodeFailed      = errors.New("[model] decode response failed")
-	ErrRequestIncomplete = errors.New("[model] request not completed")
-)
-
 // Eternally sends request to API and logs error
-func sendRequestEternal(ctx context.Context, request *Request) string {
+func sendRequestEternal(
+	ctx context.Context,
+	request *Request,
+	logger *logging.Logger,
+) (string, error) {
 	var (
 		text string
 		err  error
@@ -88,44 +80,60 @@ func sendRequestEternal(ctx context.Context, request *Request) string {
 
 	// Get text
 	for {
-		text, err = sendRequest(ctx, request)
+		// Check if parent context (shutdown is done before trying)
+		if ctx.Err() != nil {
+			return "", ErrCtxDone
+		}
+
+		text, err = sendRequest(ctx, request, logger)
 		if err == nil {
 			break
 		}
-		log.Printf("%v: %v", ErrSendFailed, err)
-		time.Sleep(retryTime)
+
+		logger.Error("request failed retrying", logging.Err(err))
+
+		select {
+		case <-time.After(retryTime):
+			continue
+		case <-ctx.Done():
+			return "", ErrCtxDone
+		}
 	}
 
-	// Clean text
-	log.Println("Raw text:", text)
-	text = trimNoise(text)
-	log.Println("Cleaned text:", text)
-
-	return text
+	return text, nil
 }
 
 // Sends Ollama request
-func sendRequest(ctx context.Context, request *Request) (string, error) {
+func sendRequest(
+	ctx context.Context,
+	request *Request,
+	logger *logging.Logger,
+) (string, error) {
 	// Encode request body to JSON data
 	jsonData, err := json.Marshal(request)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrMarshalFailed, err)
+		return "", fmt.Errorf("%w: %v", errMarshalFailed, err)
 	}
+
+	// Create context with timeout for this request
+	// to drop connection if response takes too long
+	reqCtx, cancel := context.WithTimeout(ctx, waitTimeout)
+	defer cancel()
 
 	// Make POST request with JSON data
 	req, err := http.NewRequestWithContext(
-		ctx, "POST", apiUrl, bytes.NewBuffer(jsonData),
+		reqCtx, "POST", apiUrl, bytes.NewBuffer(jsonData),
 	)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrRequestFailed, err)
+		return "", fmt.Errorf("%w: %v", errRequestFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	// Set HTTP client
-	client := &http.Client{Timeout: waitTimeout}
+	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrSendFailed, err)
+		return "", fmt.Errorf("%w: %v", errSendFailed, err)
 	}
 	defer resp.Body.Close()
 
@@ -133,7 +141,8 @@ func sendRequest(ctx context.Context, request *Request) (string, error) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return "", fmt.Errorf(
-			"%w %d: %s", ErrInvalidStatus, resp.StatusCode, string(body),
+			"%w %d: %s",
+			errInvalidStatus, resp.StatusCode, string(body),
 		)
 	}
 
@@ -141,13 +150,21 @@ func sendRequest(ctx context.Context, request *Request) (string, error) {
 	var response Response
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrDecodeFailed, err)
+		return "", fmt.Errorf("%w: %v", errDecodeFailed, err)
 	}
 
 	// Validate request completeness
 	if !response.Done {
-		return "", ErrRequestIncomplete
+		return "", errRequestIncomplete
 	}
+
+	// Log raw response
+	logger.Debug(
+		"raw response", logging.RawResponse(response.Response),
+	)
+
+	// Clean response
+	response.Response = request.cleaner(response.Response)
 
 	return response.Response, nil
 }

@@ -11,7 +11,7 @@
         "prompt_templates": {
             "response": "Respond as %s taking part in chat '%s'. Match the user's language, unless asked otherwise. Immerse fully in the persona, including their biases, slang and mood. Maintain native-level fluency with linguistic precision. Avoid extensive repetitions, questions, apologizing.\n\nMemory:\n%s\n\n%s: ",
             "select": "Select the most authentic %s response. Avoid generic, polite, safe AI-style responses. Prefer vivid, unique, distinguished human-like responses. Consider native-level fluency with linguistic precision part of authenticity. Respond ONLY with number.\n\nMemory:\n%s\n\nResponse Candidates:\n%s\n\nBest Candidate (1-%d): ",
-            "tags": "Update tags of %s from %s perspective.\nUse simple English. Add only distinct, relevant traits. Remove repetitive, outdated ones.\n\nTemplate: '#beliefs #hobbies #job #personality #nationality #opinions_on_other'\nExample: '#christian #gardener #farmer #discreet #canadian #thinks_alice_should_buy_local_foods #thinks_bob_needs_more_fresh_air'.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s old tags:\n%s\n\n%s new tags (0-%d tags): ",
+            "tags": "Update tags of %s from %s perspective.\nUse simple English. Add only distinct, relevant traits. Remove repetitive, outdated ones.\n\nTemplate: '#traits #beliefs #nationality #occupation'\nExample: '#discreet #christian #canadian #farmer'.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s old tags:\n%s\n\n%s new tags (0-%d tags): ",
             "carma": "Update carma of %s from %s perspective based on last message. Respond ONLY with a sign for positive (+), neutral (=) or negative (-) carma update.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s carma: %s\n\nCarma Update (-/=/+): "
         },
         "allowed_chats": {

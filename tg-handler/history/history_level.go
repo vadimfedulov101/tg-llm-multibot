@@ -3,13 +3,20 @@ package history
 import (
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"sync"
 
 	"google.golang.org/protobuf/proto"
 
 	"tg-handler/history/pb"
+	"tg-handler/logging"
+)
+
+// History errors
+var (
+	errGetPathFailed   = errors.New("failed to get path")
+	errReadFailed      = errors.New("failed to read file")
+	errUnmarshalFailed = errors.New("failed to unmarshal file")
 )
 
 // History consists from bot histories, bot-agnostic shared queues.
@@ -55,30 +62,17 @@ func NewSharedChatQueues(cids []int64) SharedChatQueues {
 	return cq
 }
 
-// History errors
-var (
-	ErrGetPathFailed = errors.New(
-		"[history] failed to get history path",
-	)
-	ErrReadFailed = errors.New(
-		"[history] failed to read history file",
-	)
-	ErrWriteFailed = errors.New(
-		"[history] failed to write history file",
-	)
-	ErrMarshalFailed = errors.New(
-		"[history] failed to marshal history file",
-	)
-	ErrUnmarshalFailed = errors.New(
-		"[history] failed to unmarshal history file",
-	)
-)
-
 // UNSAFE! Loads history or panics
-func MustLoadHistory(source string, cids []int64) *History {
+func MustLoadHistory(
+	source string,
+	cids []int64,
+	logger *logging.Logger,
+) *History {
+	const errMsg = "failed to load history"
+
 	// Check if source is empty
 	if source == "" {
-		log.Panicf("%v", ErrGetPathFailed)
+		logger.Panic(errMsg, logging.Err(errGetPathFailed))
 	}
 
 	// Try to read file
@@ -87,45 +81,31 @@ func MustLoadHistory(source string, cids []int64) *History {
 		// Return new if file doesn't exist
 		return NewHistory(cids)
 	} else if err != nil {
-		log.Panicf("%v: %v", ErrReadFailed, err)
+		logger.Panic(
+			errMsg,
+			logging.Err(fmt.Errorf("%w: %v", errReadFailed, err)),
+		)
 	}
 
 	// Unmarshal
 	var protoRoot pb.RootHistory
 	if err := proto.Unmarshal(data, &protoRoot); err != nil {
-		log.Printf("%v: %v", ErrUnmarshalFailed, err)
-		log.Printf("[memory] opting to empty history")
+		logger.Error(
+			errMsg,
+			logging.Err(
+				fmt.Errorf("%w: v", errUnmarshalFailed, err),
+			),
+		)
+
+		logger.Info("opting to empty history")
 		return NewHistory(cids)
 	}
 
 	// Convert back to internal structure
 	history := fromProto(&protoRoot, cids)
 
-	log.Println("[memory] history loaded")
+	logger.Info("history loaded")
 	return history
-}
-
-// Saves history
-func (h *History) Save(dest string) error {
-	h.lock()
-	defer h.unlock()
-
-	// Convert to Proto struct
-	protoRoot := h.toProto()
-
-	// Marshal to binary
-	data, err := proto.Marshal(protoRoot)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrMarshalFailed, err)
-	}
-
-	// Write file
-	if err := os.WriteFile(dest, data, 0644); err != nil {
-		return fmt.Errorf("%w: %v", ErrWriteFailed, err)
-	}
-
-	log.Println("[memory] history written")
-	return nil
 }
 
 // Gets bot data

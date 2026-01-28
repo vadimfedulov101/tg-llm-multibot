@@ -1,10 +1,19 @@
 package messaging
 
 import (
+	"errors"
+	"fmt"
+
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+// Message info errors
+var (
+	errMsgEmptySender = errors.New("empty sender of message")
+	errMsgEmptyText   = errors.New("empty text of message")
 )
 
 // Recursive type.
@@ -30,10 +39,10 @@ func NewMessageInfo(
 	detectMentions func(string) bool,
 	modifyMentions func(string) string,
 	level int,
-) *MessageInfo {
+) (*MessageInfo, error) {
 	// Handle nil and too deep recursion
 	if msg == nil || level > 2 {
-		return nil
+		return nil, nil
 	}
 
 	// Get sender and text
@@ -41,9 +50,18 @@ func NewMessageInfo(
 		sender = getSender(msg)
 		text   = getText(msg)
 	)
-	// Return nil if no sender or text
-	if sender == "" || text == "" {
-		return nil
+
+	// Handle empty sender and text
+	if sender == "" && text == "" {
+		return nil, fmt.Errorf(
+			"%w; %w", errMsgEmptySender, errMsgEmptyText,
+		)
+	}
+	if sender == "" {
+		return nil, errMsgEmptySender
+	}
+	if text == "" {
+		return nil, errMsgEmptyText
 	}
 
 	// Get basic info
@@ -58,6 +76,16 @@ func NewMessageInfo(
 		text = modifyMentions(text)
 	}
 
+	// Get previous message (!!! ERROR IGNORED !!!)
+	prevMsg, _ := NewMessageInfo(
+		bot, msg.ReplyToMessage,
+		detectAdmin,
+		detectReply,
+		detectMentions,
+		modifyMentions,
+		level+1,
+	)
+
 	return &MessageInfo{
 		Chat:         msg.Chat,
 		ID:           msg.MessageID,
@@ -65,15 +93,8 @@ func NewMessageInfo(
 		line:         getLine(sender, text),
 		IsTriggering: isFromAdmin || isReplied || isMentioned,
 		IsFromAdmin:  isFromAdmin,
-		prevMsg: NewMessageInfo(
-			bot, msg.ReplyToMessage,
-			detectAdmin,
-			detectReply,
-			detectMentions,
-			modifyMentions,
-			level+1,
-		),
-	}
+		prevMsg:      prevMsg,
+	}, nil
 }
 
 // Line exposed

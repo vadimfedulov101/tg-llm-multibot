@@ -12,26 +12,24 @@ const (
 
 // Carma errors
 var (
-	ErrCarmaOOB      = errors.New("[carma] carma out of bounds")
-	ErrCarmaBelowMin = fmt.Errorf("below minimum value of %d", Min)
-	ErrCarmaOverMax  = fmt.Errorf("over maximum value of %d", Max)
+	errCarmaOOB      = errors.New("carma out of bounds")
+	errCarmaBelowMin = fmt.Errorf("below minimum value of %d", Min)
+	errCarmaOverMax  = fmt.Errorf("over maximum value of %d", Max)
 
-	ErrCarmaUpdateOOV = errors.New(
-		"[carma] carma update out of variants",
-	)
+	errCarmaUpdateOOV = errors.New("carma update out of variants")
 )
 
 type Carma int
 
 func New(n int) (*Carma, error) {
-	var err = ErrCarmaOOB
+	var err = errCarmaOOB
 
 	// Abide bounds
 	if n < Min {
-		return nil, fmt.Errorf("%w: %v", err, ErrCarmaBelowMin)
+		return nil, fmt.Errorf("%w: %v", err, errCarmaBelowMin)
 	}
 	if n > Max {
-		return nil, fmt.Errorf("%w: %v", err, ErrCarmaOverMax)
+		return nil, fmt.Errorf("%w: %v", err, errCarmaOverMax)
 	}
 
 	c := Carma(n)
@@ -68,7 +66,7 @@ func NewUpdate(s string) (Update, error) {
 	case "+":
 		return UpdatePositive, nil
 	default:
-		return UpdateNeutral, ErrCarmaUpdateOOV
+		return UpdateNeutral, errCarmaUpdateOOV
 	}
 }
 

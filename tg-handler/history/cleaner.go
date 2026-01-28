@@ -3,7 +3,7 @@ package history
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
 	"runtime"
 	"sync"
 	"time"
@@ -11,19 +11,18 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"tg-handler/conf"
+	"tg-handler/logging"
 )
 
 // Cleaner errors
 var (
-	errSaveFailed = errors.New(
-		"[history] cleaner failed to save history",
-	)
+	errSaveFailed = errors.New("failed to save history")
 )
 
 // Cleaner context logs
 const (
 	// Event message
-	ctxDoneMsg = "[history] cleaner received shutdown signal upon "
+	ctxDoneMsg = "cleaner received shutdown signal upon "
 
 	// Interrupted operations
 	opWaiting     = "waiting"
@@ -61,6 +60,7 @@ func (h *History) Cleaner(
 	ctx context.Context,
 	path string,
 	settings *conf.CleanerSettings,
+	logger *logging.Logger,
 ) {
 	// Get variables
 	var (
@@ -73,21 +73,19 @@ func (h *History) Cleaner(
 	defer t.Stop()
 
 	// Clean and save on tick until context DONE
-	defer log.Println("[history] cleaner shut down gracefully")
+	defer logger.Info("cleaner shut down gracefully")
 	for {
 		select {
 		case <-t.C:
 			// Clean
-			err := h.clean(ctx, messageTTL)
+			err := h.clean(ctx, messageTTL, logger)
 			if err != nil && errors.Is(err, context.Canceled) {
 				return
 			}
 			// Save (skip extra context check)
-			if err := h.Save(path); err != nil {
-				log.Printf("%v: %v", errSaveFailed, err)
-			}
+			h.Save(path, logger)
 		case <-ctx.Done():
-			log.Println(ctxDoneMsg + opWaiting)
+			logger.Info(ctxDoneMsg + opWaiting)
 			return
 		}
 	}
@@ -97,6 +95,7 @@ func (h *History) Cleaner(
 func (h *History) clean(
 	ctx context.Context,
 	messageTTL time.Duration,
+	logger *logging.Logger,
 ) error {
 	var currentTime = time.Now()
 
@@ -106,7 +105,7 @@ func (h *History) clean(
 	var logSendingOnce, logGettingOnce sync.Once
 
 	// COLLECT jobs
-	jobs := h.collectCleanJobs()
+	jobs := h.collectCleanJobs(logger)
 	if len(jobs) < 1 {
 		return nil
 	}
@@ -114,7 +113,9 @@ func (h *History) clean(
 	// START job sender
 	jobsChan := make(chan CleanJob, len(jobs))
 	g.Go(func() error { // evaluates to error
-		return jobSender(gctx, jobs, jobsChan, &logSendingOnce)
+		return jobSender(
+			gctx, jobs, jobsChan, &logSendingOnce, logger,
+		)
 	})
 
 	// START job receivers (clean workers)
@@ -123,7 +124,7 @@ func (h *History) clean(
 		g.Go(func() error {
 			return h.cleanWorker( // evaluates to error
 				gctx, workerID, jobsChan, currentTime, messageTTL,
-				&logGettingOnce,
+				&logGettingOnce, logger,
 			)
 		})
 	}
@@ -131,7 +132,7 @@ func (h *History) clean(
 	return g.Wait() // evaluates to error
 }
 
-func (h *History) collectCleanJobs() []CleanJob {
+func (h *History) collectCleanJobs(logger *logging.Logger) []CleanJob {
 	var jobs []CleanJob
 
 	var (
@@ -177,7 +178,7 @@ func (h *History) collectCleanJobs() []CleanJob {
 		sbh.mu.RUnlock()
 	}
 
-	log.Printf("[cleaner] collected %d jobs", len(jobs))
+	logger.Info(fmt.Sprintf("collected %d jobs", len(jobs)))
 	return jobs
 }
 
@@ -187,6 +188,7 @@ func jobSender(
 	jobs []CleanJob,
 	jobsChan chan<- CleanJob,
 	logSendingOnce *sync.Once,
+	logger *logging.Logger,
 ) error {
 	// CLOSE channel after all sent
 	defer close(jobsChan)
@@ -197,7 +199,7 @@ func jobSender(
 		case jobsChan <- job:
 		case <-gctx.Done(): // all workers done
 			logSendingOnce.Do(func() { // log only first time
-				log.Println(ctxDoneMsg + opSendingJobs)
+				logger.Info(ctxDoneMsg + opSendingJobs)
 			})
 			return gctx.Err()
 		}
@@ -214,16 +216,18 @@ func (h *History) cleanWorker(
 	currentTime time.Time,
 	messageTTL time.Duration,
 	logGettingOnce *sync.Once,
+	logger *logging.Logger,
 ) error {
 	// GET jobs until channel CLOSED or group context DONE
 	for processed := 0; ; processed++ {
 		select {
 		case job, ok := <-jobsChan:
 			if !ok {
-				log.Println("[cleaner] jobs channel closed")
-				log.Printf(
-					"[cleaner] worker %d processed %d jobs",
-					workerID, processed,
+				logger.Info("jobs channel closed")
+				logger.Info(
+					fmt.Sprintf("worker %d processed %d jobs",
+						workerID, processed,
+					),
 				)
 				return nil
 			}
@@ -233,7 +237,7 @@ func (h *History) cleanWorker(
 
 		case <-gctx.Done(): // all workers done
 			logGettingOnce.Do(func() { // log only first time
-				log.Println(ctxDoneMsg + opGettingJobs)
+				logger.Info(ctxDoneMsg + opGettingJobs)
 			})
 			return gctx.Err()
 		}

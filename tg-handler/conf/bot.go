@@ -2,16 +2,10 @@ package conf
 
 import (
 	"encoding/json"
-	"errors"
-	"log"
+	"fmt"
 	"os"
-)
 
-// Bot config errors
-var (
-	errBReadFailed           = errors.New("[conf] read bot config failed")
-	errBUnmarshalFailed      = errors.New("[conf] unmarshal bot config failed")
-	errBNegativeCandidateNum = errors.New("[conf] negative candidate number")
+	"tg-handler/logging"
 )
 
 // Bot config
@@ -37,30 +31,67 @@ type OptionalSettings struct {
 }
 
 // Loads settings or panics
-func MustLoadBotConf(confPath string) *BotConf {
+func MustLoadBotConf(
+	path string, logger *logging.Logger,
+) *BotConf {
 	var botConf BotConf
 
+	// --- LOGGER ---
+	const errMsg = "failed to load bot config"
+	logger = logger.With(
+		logging.ConfigType("bot"),
+		logging.Path(path),
+	)
+	// --- LOGGER ---
+
 	// Read JSON data from file
-	data, err := os.ReadFile(confPath)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatalf("%v: %v", errBReadFailed, err)
+		logger.Panic(errMsg,
+			logging.Err(
+				fmt.Errorf("%v: %v", errReadFailed, err),
+			),
+		)
 	}
 
 	// Decode JSON data to settings
 	err = json.Unmarshal(data, &botConf)
 	if err != nil {
-		log.Fatalf("%v: %v", errBUnmarshalFailed, err)
+		logger.Panic(errMsg,
+			logging.Err(
+				fmt.Errorf("%v: %v", errUnmarshalFailed, err),
+			),
+		)
 	}
 
 	// Validate candidate number or panic
-	mustValidateCandidateNum(&botConf)
+	mustValidateCandidateNum(&botConf, logger)
+
+	// Validate token limit
+	setTokenLimit(&botConf, logger)
 
 	return &botConf
 }
 
 // Validates candidate num or panics
-func mustValidateCandidateNum(conf *BotConf) {
+func mustValidateCandidateNum(
+	conf *BotConf, logger *logging.Logger,
+) {
+	const errMsg = "failed to load bot config"
 	if conf.Main.CandidateNum < 0 {
-		log.Fatal(errBNegativeCandidateNum)
+		logger.Panic(errMsg, logging.Err(errNegCandidateNum))
 	}
+}
+
+// TOKEN LIMIT LOGIC
+func setTokenLimit(conf *BotConf, logger *logging.Logger) {
+	// 0 means "use model default" (usually infinite or -1).
+	// Force limit to fit in Telegram message (approx 4096 chars).
+	if conf.Optional.NumPredict == 0 {
+		conf.Optional.NumPredict = 600
+		logger.Info(
+			"defaulted num_predict to 600 (for Telegram)",
+		)
+	}
+
 }

@@ -4,12 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"os"
 	"time"
 
 	"tg-handler/carma"
 	"tg-handler/conf"
+	"tg-handler/denoising"
+	"tg-handler/logging"
 	"tg-handler/memory"
+	"tg-handler/names"
 	"tg-handler/prompts"
 	"tg-handler/selectIdx"
 	"tg-handler/tags"
@@ -17,9 +20,10 @@ import (
 
 // Constants
 const (
+	envModelVar  = "LLM_MODEL"
 	apiUrl       = "http://ollama:11434/api/generate"
-	retryTime    = time.Minute
-	waitTimeout  = 10 * time.Minute
+	retryTime    = 10 * time.Second
+	waitTimeout  = 2 * time.Minute
 	maxSelectTry = 10
 	maxTagsTry   = 10
 	maxCarmaTry  = 10
@@ -41,48 +45,62 @@ type LineProvider interface {
 
 // Model errors
 var (
-	errGenFailed = errors.New("generation failed")
+	errGetEnvFailed = errors.New("failed to get env variable")
+	errGenFailed    = errors.New("generation failed")
 )
 
 // LLM model
 type Model struct {
+	Name      string
 	Config    *conf.BotConf
 	Prompts   *prompts.Prompts
 	Memory    *memory.Memory
-	BotName   string
+	Names     *names.Names
 	ChatTitle string
+	Logger    *logging.Logger
 }
 
 func New(
 	botConf *conf.BotConf,
-	promptTemplates *conf.PromptTemplates,
+	prompts *prompts.Prompts,
 	memory *memory.Memory,
-	lastMsg Message,
-	botName string,
+	names *names.Names,
 	chatTitle string,
+	logger *logging.Logger,
 ) *Model {
-	var candidateNum = botConf.Main.CandidateNum
+	const errMsg = "failed to get env variable"
 
-	// Format prompts from templates
-	prompts := prompts.New(
-		promptTemplates,
-		memory, lastMsg, botName, chatTitle, candidateNum,
-	)
+	// Get model name
+	name, ok := os.LookupEnv(envModelVar)
+	if !ok {
+		logger.With(logging.EnvVar(envModelVar)).
+			Panic(errMsg, logging.Err(errGetEnvFailed))
+	}
 
 	return &Model{
+		Name:      name,
 		Config:    botConf,
 		Prompts:   prompts,
 		Memory:    memory,
-		BotName:   botName,
+		Names:     names,
 		ChatTitle: chatTitle,
+		Logger:    logger,
 	}
 }
 
-// Reacts to new message
-func (m *Model) React(ctx context.Context) string {
-	candidates := m.genCandidates(ctx)
-	bestCandidate := m.selectBestCandidate(ctx, candidates)
-	return bestCandidate
+// Replies to new message as model
+func (m *Model) Reply(ctx context.Context) (string, error) {
+	candidates, err := m.genCandidates(ctx)
+	if errors.Is(err, ErrCtxDone) {
+		return "", err
+	}
+
+	bestCandidate, err := m.selectBestCandidate(ctx, candidates)
+	if errors.Is(err, ErrCtxDone) {
+		return "", err
+	}
+
+	return bestCandidate, nil
 }
 
 // Reflects on response
@@ -90,7 +108,7 @@ func (m *Model) Reflect(
 	ctx context.Context,
 	user string,
 	reply Message,
-) {
+) error {
 	var (
 		botContacts = m.Memory.BotContacts
 	)
@@ -99,168 +117,247 @@ func (m *Model) Reflect(
 	botContact := botContacts.Get(user)
 
 	// Update carma
-	carmaUpdate := m.genCarmaUpdate(ctx, reply.Line())
+	carmaUpdate, err := m.genCarmaUpdate(ctx, reply.Line())
+	if errors.Is(err, ErrCtxDone) {
+		return err
+	}
 	botContact.Carma.Apply(carmaUpdate)
 
 	// Update persona
-	tags := m.genTags(ctx, reply.Line())
+	tags, err := m.genTags(ctx, reply.Line())
+	if errors.Is(err, ErrCtxDone) {
+		return err
+	}
 	botContact.Tags = tags
 
 	// Reset contacts
 	botContacts.Set(user, botContact)
+
+	return nil
 }
 
 // Generates candidates
-func (m *Model) genCandidates(ctx context.Context) []string {
+func (m *Model) genCandidates(
+	ctx context.Context,
+) ([]string, error) {
+	logger := m.Logger
+
 	var (
 		candidateNum = m.Config.Main.CandidateNum
 		candidates   = make([]string, 0, candidateNum)
 	)
 
+	// Get start time
+	start := time.Now()
+
 	// Form request
-	request := newRequest(m.Prompts.Response, m.Config)
+	request := m.newRequest(m.Prompts.Response)
 
 	// Generate candidates
 	for i := range candidateNum {
-		tryStr := fmt.Sprintf("[model] generate (iter %d)", i+1)
+		// Get iteration start time
+		iStart := time.Now()
 
 		// Log start
-		log.Printf("%s: %s", tryStr, "...")
+		iterLog := logger.With(logging.Iter(i + 1))
+		iterLog.Info("generating candidate")
 
 		// Get new candidate
-		candidate := sendRequestEternal(ctx, request)
+		candidate, err := sendRequestEternal(ctx, request, iterLog)
+		if errors.Is(err, ErrCtxDone) {
+			return []string{}, ErrCtxDone
+		}
 
 		// Append to candidates
 		candidates = append(candidates, candidate)
 
 		// Log successs
-		log.Printf("[model] candidate %d: %s", i+1, candidate)
+		iterLog.Debug(
+			"candidate generated",
+			logging.Candidate(candidate),
+			logging.Duration(time.Since(iStart)),
+		)
 	}
 
-	return candidates
+	// Log final success
+	logger.With(
+		logging.Duration(time.Since(start)),
+	).Info("candidates generated")
+	return candidates, nil
 }
 
 // Select the best candidate
 func (m *Model) selectBestCandidate(
 	ctx context.Context,
 	candidates Candidates,
-) string {
-	const genType = "select index"
+) (string, error) {
+	logger := m.Logger
 
-	// One candidate to be selected, return it
+	// One candidate to be selected from, return it
 	if len(candidates) == 1 {
-		return candidates[0]
+		return candidates[0], nil
 	}
+
+	// Get start time
+	start := time.Now()
 
 	// Format prompt
 	prompt := prompts.FinFmtSelectPrompt(
 		m.Prompts.Select, candidates,
 	)
 	// Form request
-	request := newRequest(prompt, m.Config)
+	request := m.newRequest(prompt)
 
 	// Try to select the best candidate
 	for i := range maxSelectTry {
-		tryStr := fmt.Sprintf("[model] select (try %d)", i+1)
-
 		// Log start
-		log.Printf("%s: %s", tryStr, "...")
+		iterLog := logger.With(logging.Iter(i + 1))
+		iterLog.Info("selecting candidate")
 
 		// Try to get select index
-		selectStr := sendRequestEternal(ctx, request)
+		selectStr, err := sendRequestEternal(ctx, request, iterLog)
+		if errors.Is(err, ErrCtxDone) {
+			return "", err
+		}
 		selectIdx, err := selectIdx.New(selectStr, len(candidates))
 
 		// Log success, return
 		if err == nil {
-			log.Printf("%s: %s", tryStr, selectIdx)
-			return candidates[selectIdx]
+			candidateSelected := candidates[selectIdx]
+			iterLog.Info(
+				"candidate selected",
+				logging.Candidate(candidateSelected),
+				logging.Duration(time.Since(start)),
+			)
+			return candidateSelected, nil
 		}
 
 		// Log failure, continue
-		log.Printf(
-			"%s: %v: %s: %v", tryStr, errGenFailed, genType, err,
-		)
+		iterLog.Error("selection failed", logging.Err(
+			fmt.Errorf("%w: %v", errGenFailed, err),
+		))
 	}
 
 	// Fall back
-	log.Println("[model] using fallback value for candidates")
-	return candidates.Fallback()
+	logger.Info("using fallback value for candidates")
+	return candidates.Fallback(), nil
 }
 
 // Generates unique tags
 func (m *Model) genTags(
 	ctx context.Context,
 	replyLine string,
-) tags.Tags {
-	const genType = "tags"
+) (tags.Tags, error) {
+	logger := m.Logger
+
+	// Get start time
+	start := time.Now()
 
 	// Format prompt
 	prompt := prompts.FinFmtTagsPrompt(m.Prompts.Tags, replyLine)
 	// Form request
-	request := newRequest(prompt, m.Config)
+	request := m.newRequest(prompt)
 
 	for i := range maxTagsTry {
-		tagsStr := fmt.Sprintf("[model] tags (try %d)", i+1)
-
 		// Log start
-		log.Printf("%s: %s", tagsStr, "...")
+		iterLog := logger.With(logging.Iter(i + 1))
+		iterLog.Info("generating tags")
 
 		// Get tags
-		rawTags := sendRequestEternal(ctx, request)
-		tags, err := tags.New(rawTags, m.Memory.Limits.Tags)
+		rawTags, err := sendRequestEternal(ctx, request, iterLog)
+		if errors.Is(err, ErrCtxDone) {
+			return nil, err
+		}
+		tags, err := tags.New(rawTags, m.Memory.Limits.Tags, iterLog)
 
 		// Log success, return
 		if err == nil {
-			log.Printf("[model] tags: %s", tags)
-			return tags
+			iterLog.Info(
+				"tags generated",
+				logging.Tags(tags.String()),
+				logging.Duration(time.Since(start)),
+			)
+			return tags, nil
 		}
 
 		// Log failure, continue
-		log.Printf(
-			"%s: %v: %s: %v", tagsStr, errGenFailed, genType, err,
+		iterLog.Error(
+			"generating tags failed", logging.Err(
+				fmt.Errorf("%w: %v", errGenFailed, err),
+			),
 		)
 	}
 
 	// Fall back
-	log.Println("[model] using fallback value for tags")
-	return tags.Fallback()
+	logger.Info("using fallback value for tags")
+	return tags.Fallback(), nil
 }
 
 // Generates carma update
 func (m *Model) genCarmaUpdate(
 	ctx context.Context,
 	replyLine string,
-) carma.Update {
-	const genType = "carma update"
+) (carma.Update, error) {
+	logger := m.Logger
+
+	// Get start time
+	start := time.Now()
 
 	// Format prompt
 	prompt := prompts.FinFmtCarmaPrompt(m.Prompts.Carma, replyLine)
 	// Form request
-	request := newRequest(prompt, m.Config)
+	request := m.newRequest(prompt)
 
 	for i := range maxCarmaTry {
-		tryStr := fmt.Sprintf("[model] carma update (try %d)", i+1)
-
 		// Log start
-		log.Printf("%s: %s", tryStr, "...")
+		iterLog := logger.With(logging.Iter(i + 1))
+		iterLog.Info("generating carma update")
 
 		// Try to get carma update
-		carmaUpdateStr := sendRequestEternal(ctx, request)
+		carmaUpdateStr, err := sendRequestEternal(ctx, request, iterLog)
+		if errors.Is(err, ErrCtxDone) {
+			return carma.Fallback(), err
+		}
 		carmaUpdate, err := carma.NewUpdate(carmaUpdateStr)
 
 		// Log success, return
 		if err == nil {
-			log.Printf("[model] carma update: %s", carmaUpdate)
-			return carmaUpdate
+			iterLog.Info(
+				"carma update generated",
+				logging.CarmaUpdate(carmaUpdate.String()),
+				logging.Duration(time.Since(start)),
+			)
+			return carmaUpdate, nil
 		}
 
 		// Log failure, continue
-		log.Printf(
-			"%s: %v: %s: %v", tryStr, errGenFailed, genType, err,
+		iterLog.Error(
+			"failed to generate carma update",
+			logging.Err(
+				fmt.Errorf("%w: %v", errGenFailed, err),
+			),
 		)
 	}
 
 	// Fall back
-	log.Println("[model] using fallback value for carma update")
-	return carma.Fallback()
+	logger.Info("using fallback value for carma update")
+	return carma.Fallback(), nil
+}
+
+// Forms new request using model's model and config
+func (m *Model) newRequest(prompt string) *Request {
+	return newRequest(prompt, m.Name, m.Config, m.getReplyCleaner())
+}
+
+// Gets reply cleaner
+func (m *Model) getReplyCleaner() func(string) string {
+	var names = m.Names
+	var (
+		botName  = names.Bot
+		userName = names.User
+	)
+
+	return func(text string) string {
+		return denoising.DenoiseResponse(text, botName, userName)
+	}
 }

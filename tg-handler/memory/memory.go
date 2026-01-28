@@ -6,6 +6,7 @@ import (
 
 	"tg-handler/conf"
 	"tg-handler/history"
+	"tg-handler/logging"
 )
 
 // messaging.MessageInfo abstraction
@@ -36,6 +37,7 @@ func New(
 	sbc *history.SafeBotContacts,
 	lc LineChain,
 	lims *conf.MemoryLimits,
+	logger *logging.Logger,
 ) *Memory {
 	// Get memory data
 	var (
@@ -50,12 +52,10 @@ func New(
 	)
 
 	return &Memory{
-		BotContacts:    sbc,
-		ChatQueueLines: chatQueue.GetLines(chatQueueLim),
-		ReplyChainLines: replyChains.GetLines(
-			lc.PrevLine(), lc.Line(), replyChainLim,
-		),
-		Limits: lims,
+		BotContacts:     sbc,
+		ChatQueueLines:  chatQueue.Get(chatQueueLim, logger),
+		ReplyChainLines: replyChains.Get(lc, replyChainLim, logger),
+		Limits:          lims,
 	}
 }
 

@@ -5,12 +5,8 @@ import (
 
 	"tg-handler/conf"
 	"tg-handler/memory"
+	"tg-handler/names"
 )
-
-// Abstract sender provider
-type SenderProvider interface {
-	Sender() string
-}
 
 // Prompts from formatted templates
 type Prompts struct {
@@ -24,8 +20,7 @@ type Prompts struct {
 func New(
 	templates *conf.PromptTemplates,
 	memory *memory.Memory,
-	senderP SenderProvider,
-	botName string,
+	names *names.Names,
 	chatTitle string,
 	candidateNum int,
 ) *Prompts {
@@ -38,13 +33,7 @@ func New(
 
 		// Get tags limit
 		tagsLimit = memory.Limits.Tags
-
-		// Get sender username
-		userName = senderP.Sender()
 	)
-
-	// Get names
-	names := NewNames(botName, userName)
 
 	return &Prompts{
 		Response: fmtResponsePrompt(
@@ -94,7 +83,7 @@ func FinFmtCarmaPrompt(prompt string, replyLine string) string {
 func fmtResponsePrompt(
 	template string,
 	memory *memory.Memory,
-	names *Names,
+	names *names.Names,
 	chatTitle string,
 ) string {
 	var botName = names.Bot
@@ -108,7 +97,7 @@ func fmtResponsePrompt(
 func fmtSelectPrompt(
 	template string,
 	memory *memory.Memory,
-	names *Names,
+	names *names.Names,
 	candidateNum int,
 ) string {
 	var botName = names.Bot
@@ -124,7 +113,7 @@ func fmtSelectPrompt(
 func fmtTagsPrompt(
 	template string,
 	memory *memory.Memory,
-	names *Names,
+	names *names.Names,
 	lim int,
 ) string {
 	var (
@@ -146,7 +135,7 @@ func fmtTagsPrompt(
 func fmtCarmaPrompt(
 	template string,
 	memory *memory.Memory,
-	names *Names,
+	names *names.Names,
 ) string {
 	var (
 		botName  = names.Bot
