@@ -20,19 +20,11 @@ type MainSettings struct {
 	CandidateNum int    `json:"candidate_num"`
 }
 
-// Optional settings for LLM
-type OptionalSettings struct {
-	Temperature   float32 `json:"temperature,omitempty"`
-	RepeatPenalty float32 `json:"repeat_penalty,omitempty"`
-	TopP          float32 `json:"top_p,omitempty"`
-	TopK          int     `json:"top_k,omitempty"`
-	NumPredict    int     `json:"num_predict,omitempty"`
-	Seed          int     `json:"seed,omitempty"`
-}
-
 // Loads settings or panics
 func MustLoadBotConf(
-	path string, logger *logging.Logger,
+	path string,
+	defaults *OptionalSettings,
+	logger *logging.Logger,
 ) *BotConf {
 	var botConf BotConf
 
@@ -64,13 +56,36 @@ func MustLoadBotConf(
 		)
 	}
 
+	// Validate token limit
+	botConf.Optional = *mergeOptions(&botConf.Optional, defaults)
+
 	// Validate candidate number or panic
 	mustValidateCandidateNum(&botConf, logger)
 
-	// Validate token limit
-	setTokenLimit(&botConf, logger)
-
 	return &botConf
+}
+
+// Helper to merge options (Bot overrides Default)
+func mergeOptions(bot, def *OptionalSettings) *OptionalSettings {
+	if bot.Temperature == 0 {
+		bot.Temperature = def.Temperature
+	}
+	if bot.RepeatPenalty == 0 {
+		bot.RepeatPenalty = def.RepeatPenalty
+	}
+	if bot.TopP == 0 {
+		bot.TopP = def.TopP
+	}
+	if bot.TopK == 0 {
+		bot.TopK = def.TopK
+	}
+	if bot.NumPredict == 0 {
+		bot.NumPredict = def.NumPredict
+	}
+	if bot.Seed == 0 {
+		bot.Seed = def.Seed
+	}
+	return bot
 }
 
 // Validates candidate num or panics
@@ -81,17 +96,4 @@ func mustValidateCandidateNum(
 	if conf.Main.CandidateNum < 0 {
 		logger.Panic(errMsg, logging.Err(errNegCandidateNum))
 	}
-}
-
-// TOKEN LIMIT LOGIC
-func setTokenLimit(conf *BotConf, logger *logging.Logger) {
-	// 0 means "use model default" (usually infinite or -1).
-	// Force limit to fit in Telegram message (approx 4096 chars).
-	if conf.Optional.NumPredict == 0 {
-		conf.Optional.NumPredict = 600
-		logger.Info(
-			"defaulted num_predict to 600 (for Telegram)",
-		)
-	}
-
 }

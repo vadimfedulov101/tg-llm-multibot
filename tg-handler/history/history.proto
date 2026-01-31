@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package history;
+option go_package = "tg-handler/history/pb"; // Full path + package
+
+
+message MessageEntry {
+    string line = 1;
+    int64 timestamp = 2; // Unix timestamp < line
+}
+
+message ChatQueue {
+    repeated MessageEntry messages = 1;
+}
+
+message ReplyChains {
+    map<string, MessageEntry> chains = 1;
+}
+
+message BotContact {
+    int32 carma = 1;
+    string tags = 2;
+}
+
+message ChatHistory { // Only local chat queues end up here
+    ReplyChains reply_chains = 1;
+    ChatQueue local_queue = 2;
+}
+
+message BotData { // Contacts stored here as chat-agnostic
+    map<int64, ChatHistory> chats = 1;
+    map<string, BotContact> contacts = 2;
+}
+
+message RootHistory { // Shared queues stored here as bot-agnotic
+    map<int64, ChatQueue> shared_queues = 1;
+    map<string, BotData> bots = 2;
+}

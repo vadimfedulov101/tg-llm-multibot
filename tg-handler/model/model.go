@@ -24,9 +24,9 @@ const (
 	apiUrl       = "http://ollama:11434/api/generate"
 	retryTime    = 10 * time.Second
 	waitTimeout  = 2 * time.Minute
-	maxSelectTry = 10
-	maxTagsTry   = 10
-	maxCarmaTry  = 10
+	maxSelectTry = 5
+	maxTagsTry   = 5
+	maxCarmaTry  = 5
 )
 
 // Message abstraction

@@ -72,7 +72,11 @@ func New(
 		iConf.Paths.BotsConfDir, userName+".json",
 	)
 	// Get config
-	botConf := conf.MustLoadBotConf(confPath, logger)
+	botConf := conf.MustLoadBotConf(
+		confPath,
+		&iConf.BotSettings.DefaultOptions,
+		logger,
+	)
 
 	return &Bot{
 		API:         bot,

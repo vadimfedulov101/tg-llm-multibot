@@ -46,9 +46,10 @@ type CleanerSettings struct {
 
 // Bot settings
 type BotSettings struct {
-	PromptTemplates PromptTemplates `json:"prompt_templates"`
-	AllowedChats    AllowedChats    `json:"allowed_chats"`
-	MemoryLimits    MemoryLimits    `json:"memory_limits"`
+	PromptTemplates PromptTemplates  `json:"prompt_templates"`
+	AllowedChats    AllowedChats     `json:"allowed_chats"`
+	MemoryLimits    MemoryLimits     `json:"memory_limits"`
+	DefaultOptions  OptionalSettings `json:"default_options"`
 }
 
 // Allowed chats

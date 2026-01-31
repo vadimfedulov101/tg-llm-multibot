@@ -3,6 +3,7 @@ package selectIdx
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strconv"
 )
 
@@ -19,8 +20,15 @@ var (
 type SelectIdx int
 
 func New(s string, lim int) (SelectIdx, error) {
+	// Compile regex to find the first sequence of digits
+	re := regexp.MustCompile(`\d+`)
+	match := re.FindString(s)
+	if match == "" {
+		return 0, ErrSelectNumNaN
+	}
+
 	// Convert number
-	num, err := strconv.Atoi(s)
+	num, err := strconv.Atoi(match)
 	if err != nil {
 		return 0, ErrSelectNumNaN
 	}
