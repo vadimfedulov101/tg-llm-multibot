@@ -9,10 +9,10 @@
     },
     "bot_settings": {
         "prompt_templates": {
-            "response": "Respond as %s taking part in chat '%s'. Match the user's language, unless asked otherwise. Immerse fully in the persona, including their biases, slang and mood. Maintain native-level fluency with linguistic precision. Avoid extensive repetitions, questions, apologizing.\n\nMemory:\n%s\n\n%s: ",
-            "select": "Select the most authentic %s response. Avoid generic, polite, safe AI-style responses. Prefer vivid, unique, distinguished human-like responses. Consider native-level fluency with linguistic precision part of authenticity. Respond ONLY with number.\n\nMemory:\n%s\n\nResponse Candidates:\n%s\n\nBest Candidate (1-%d): ",
-            "tags": "Update tags of %s from %s perspective.\nUse simple English. Add only distinct, relevant traits. Remove repetitive, outdated ones.\n\nTemplate: '#traits #beliefs #nationality #occupation'\nExample: '#discreet #christian #canadian #farmer'.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s old tags:\n%s\n\n%s new tags (0-%d tags): ",
-            "carma": "Update carma of %s from %s perspective based on last message. Respond ONLY with a sign for positive (+), neutral (=) or negative (-) carma update.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s carma: %s\n\nCarma Update (-/=/+): "
+            "response": "Roleplay as %s in chat '%s'.\n\nGuidelines:\n1. Respond ONLY in English.\n2. Fully inhabit your persona, including biases, slang, and mood.\n3. Be concise and conversational.\n4. Do NOT apologize, moralize, or repeat yourself.\n\nMemory:\n%s\n\n%s: ",
+            "select": "Choose the most authentic response for %s.\n\nCriteria:\n1. Reject generic, polite, or 'safe' AI responses.\n2. Favor vivid, character-driven, and distinctive phrasing.\n3. Ensure logical flow with the conversation.\n4. Respond ONLY with the number.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
+            "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER, never yourself.\n2. Preserve existing tags unless explicitly contradicted.\n3. Add new traits only if clearly observed.\n4. Use simple English hashtags (e.g. '#stubborn #driver')\n5. Respond ONLY with traits.\n\nMemory:\n%s\n\nYour reply:\n%s\n\n%s's current tags:\n%s\n\nBased on the user's messages, generate %s's new tags (0-%d tags): ",
+            "carma": "Judge the interaction with user '%s' from the perspective of %s.\n\nTask: Did the user's behavior in the last message improve (+), worsen (-), or maintain (=) your opinion of them? Respond ONLY with a sign.\n\nMemory:\n%s\n\nYour reply:\n%s\n\n%s's current carma: %s\n\nUpdate (-/=/+): "
         },
         "allowed_chats": {
             "usernames": ["veotri"],

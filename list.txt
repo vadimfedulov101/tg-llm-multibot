@@ -1,4 +1,60 @@
-=== File: ./memory/memory.go ===
+=== File: ./.env ===
+LLM_MODEL='richardyoung/qwen3-14b-abliterated:q8_0'
+
+
+=== File: ./confs/init.json ===
+{
+    "paths": {
+        "history": "./history/history.pb",
+        "bots_conf_dir": "./confs/bots"
+    },
+    "cleaner_settings": {
+        "msg_ttl": "186h",
+        "cleanup_interval": "12h"
+    },
+    "bot_settings": {
+        "prompt_templates": {
+            "response": "Respond as %s taking part in chat '%s'. Match the user's language, unless asked otherwise. Immerse fully in the persona, including their biases, slang and mood. Maintain native-level fluency with linguistic precision. Avoid extensive repetitions, questions, apologizing.\n\nMemory:\n%s\n\n%s: ",
+            "select": "Select the most authentic %s response. Avoid generic, polite, safe AI-style responses. Prefer vivid, unique, distinguished human-like responses. Consider native-level fluency with linguistic precision part of authenticity. Respond ONLY with number.\n\nMemory:\n%s\n\nResponse Candidates:\n%s\n\nBest Candidate (1-%d): ",
+            "tags": "Update tags of %s from %s perspective.\nUse simple English. Add only distinct, relevant traits. Remove repetitive, outdated ones.\n\nTemplate: '#traits #beliefs #nationality #occupation'\nExample: '#discreet #christian #canadian #farmer'.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s old tags:\n%s\n\n%s new tags (0-%d tags): ",
+            "carma": "Update carma of %s from %s perspective based on last message. Respond ONLY with a sign for positive (+), neutral (=) or negative (-) carma update.\n\nMemory:\n%s\n\nResponse:\n%s\n\n%s carma: %s\n\nCarma Update (-/=/+): "
+        },
+        "allowed_chats": {
+            "usernames": ["veotri"],
+            "ids": []
+        },
+        "memory_limits": {
+            "chat_queue": 50,
+            "reply_chain": 50,
+            "tags":        33
+        }
+    }
+}
+
+
+=== File: ./confs/bots/revy2_bot.json ===
+{
+    "bot_conf": {
+	    "role": "You are Rebecca Lee, better known as Revy or 'Two Hand,' the volatile and lethal gunfighter for the Lagoon Company. You are a cynical, rude, and competitive nihilist who despises diplomacy, believing only in the power of money, brute force, and your dual modified Berettas. You are merciless and sadistic, capable of killing anyone — even unarmed civilians — without hesitation, though you mask your deep psychological scars with a loud, aggressive persona that explodes at the slightest sign of pity. Despite your bloodlust, you are sharply witty, talkative, and darkly humorous when calm, externalizing your aggression through constant foul language, heavy drinking, and chain-smoking. Now you are taking part in a chat '%s'.",
+	    "cmd_prompts": {},
+	    "candidate_num": 3
+    },
+    "options": {}
+}
+
+
+=== File: ./confs/bots/frieren_eo_bot.json ===
+{
+    "bot_conf": {
+	    "role": "You are Frieren, the legendary elven mage who defeated the Demon King. You look like a petite girl with silver twin-tails and green eyes, but you have actually lived for over a millennium. Your sense of time is extremely poor, which makes you lazy, aloof, and detached from the urgency of human life. You once dismissed a ten-year adventure as a mere moment, but the death of Hero Himmel inspired you to finally try to understand humans. Despite your stoic and easy-going exterior, you are often childish and rely on your apprentice Fern to look after you. You are sensitive about your age and will hold a grudge against anyone who calls you old. You are also a gambler when it comes to magic, happily risking your life on a one percent chance that a Mimic chest is actually treasure. You possess knowledge of the German language. Now you are taking part in a chat '%s'.",
+	    "cmd_prompts": {},
+	    "candidate_num": 3
+    },
+    "options": {}
+}
+
+
+=== File: ./tg-handler/memory/memory.go ===
 package memory
 
 import (
@@ -94,7 +150,7 @@ func (rcls ReplyChainLines) String() string {
 }
 
 
-=== File: ./history/cleaner.go ===
+=== File: ./tg-handler/history/cleaner.go ===
 package history
 
 import (
@@ -389,7 +445,7 @@ func (src *SafeReplyChains) clean(
 }
 
 
-=== File: ./history/saver.go ===
+=== File: ./tg-handler/history/saver.go ===
 package history
 
 import (
@@ -474,7 +530,7 @@ func (h *History) Save(
 }
 
 
-=== File: ./history/chat_level.go ===
+=== File: ./tg-handler/history/chat_level.go ===
 package history
 
 import (
@@ -774,7 +830,7 @@ func (rc ReplyChains) get(
 }
 
 
-=== File: ./history/message_level.go ===
+=== File: ./tg-handler/history/message_level.go ===
 package history
 
 import (
@@ -794,7 +850,7 @@ func NewMessageEntry(line string) *MessageEntry {
 }
 
 
-=== File: ./history/bot_level.go ===
+=== File: ./tg-handler/history/bot_level.go ===
 package history
 
 import (
@@ -986,7 +1042,7 @@ func (sbcs *SafeBotContacts) Set(
 }
 
 
-=== File: ./history/proto_adapter.go ===
+=== File: ./tg-handler/history/proto_adapter.go ===
 package history
 
 import (
@@ -1162,7 +1218,7 @@ func protoToReplyChains(prc *pb.ReplyChains) ReplyChains {
 }
 
 
-=== File: ./history/history.proto ===
+=== File: ./tg-handler/history/history.proto ===
 syntax = "proto3";
 
 package history;
@@ -1183,7 +1239,8 @@ message ReplyChains {
 }
 
 message BotContact {
-    int32 carma = 1
+    int32 carma = 1;
+    string tags = 2;
 }
 
 message ChatHistory { // Only local chat queues end up here
@@ -1202,7 +1259,7 @@ message RootHistory { // Shared queues stored here as bot-agnotic
 }
 
 
-=== File: ./history/history_level.go ===
+=== File: ./tg-handler/history/history_level.go ===
 package history
 
 import (
@@ -1430,7 +1487,7 @@ func (h *History) unlock() {
 }
 
 
-=== File: ./go.mod ===
+=== File: ./tg-handler/go.mod ===
 module tg-handler
 
 go 1.25.5
@@ -1443,7 +1500,7 @@ require (
 )
 
 
-=== File: ./Dockerfile ===
+=== File: ./tg-handler/Dockerfile ===
 # Stage 1: BUILDER
 FROM golang:1.25.6-alpine3.23 AS builder
 
@@ -1490,7 +1547,7 @@ COPY --from=builder /build/main .
 ENTRYPOINT ["./main"]
 
 
-=== File: ./main.go ===
+=== File: ./tg-handler/main.go ===
 package main
 
 import (
@@ -1589,7 +1646,7 @@ func startBots(
 }
 
 
-=== File: ./messaging/reply.go ===
+=== File: ./tg-handler/messaging/reply.go ===
 package messaging
 
 import (
@@ -1650,7 +1707,7 @@ func Reply(
 }
 
 
-=== File: ./messaging/chat_info.go ===
+=== File: ./tg-handler/messaging/chat_info.go ===
 package messaging
 
 import (
@@ -1729,7 +1786,7 @@ func getChatTitle(
 }
 
 
-=== File: ./messaging/message_info.go ===
+=== File: ./tg-handler/messaging/message_info.go ===
 package messaging
 
 import (
@@ -1871,7 +1928,7 @@ func getLine(sender string, text string) string {
 }
 
 
-=== File: ./messaging/typing.go ===
+=== File: ./tg-handler/messaging/typing.go ===
 package messaging
 
 import (
@@ -1942,7 +1999,7 @@ func sendSignal(
 }
 
 
-=== File: ./selectIdx/selectIdx.go ===
+=== File: ./tg-handler/selectIdx/selectIdx.go ===
 package selectIdx
 
 import (
@@ -1995,7 +2052,7 @@ func (si SelectIdx) String() string {
 }
 
 
-=== File: ./conf/init.go ===
+=== File: ./tg-handler/conf/init.go ===
 package conf
 
 import (
@@ -2231,7 +2288,7 @@ func mustValidateNumOf(
 }
 
 
-=== File: ./conf/opt_settings.go ===
+=== File: ./tg-handler/conf/opt_settings.go ===
 package conf
 
 // Optional settings for LLM
@@ -2245,7 +2302,7 @@ type OptionalSettings struct {
 }
 
 
-=== File: ./conf/bot.go ===
+=== File: ./tg-handler/conf/bot.go ===
 package conf
 
 import (
@@ -2347,7 +2404,7 @@ func mustValidateCandidateNum(
 }
 
 
-=== File: ./conf/errors.go ===
+=== File: ./tg-handler/conf/errors.go ===
 package conf
 
 import (
@@ -2373,7 +2430,7 @@ var (
 )
 
 
-=== File: ./names/names.go ===
+=== File: ./tg-handler/names/names.go ===
 package names
 
 type Names struct {
@@ -2389,7 +2446,7 @@ func New(bot string, user string) *Names {
 }
 
 
-=== File: ./model/candidates.go ===
+=== File: ./tg-handler/model/candidates.go ===
 package model
 
 import (
@@ -2418,7 +2475,7 @@ func (cs Candidates) Fallback() string {
 }
 
 
-=== File: ./model/model.go ===
+=== File: ./tg-handler/model/model.go ===
 package model
 
 import (
@@ -2784,7 +2841,7 @@ func (m *Model) getReplyCleaner() func(string) string {
 }
 
 
-=== File: ./model/ollama.go ===
+=== File: ./tg-handler/model/ollama.go ===
 package model
 
 import (
@@ -2957,7 +3014,7 @@ func sendRequest(
 }
 
 
-=== File: ./denoising/denoising.go ===
+=== File: ./tg-handler/denoising/denoising.go ===
 package denoising
 
 import (
@@ -3015,7 +3072,7 @@ func trimNonReply(s string, botName string, userName string) string {
 }
 
 
-=== File: ./bot/helpers.go ===
+=== File: ./tg-handler/bot/helpers.go ===
 package bot
 
 import (
@@ -3092,7 +3149,7 @@ func (bot *Bot) getChatValidator() func(int64) bool {
 }
 
 
-=== File: ./bot/bot.go ===
+=== File: ./tg-handler/bot/bot.go ===
 package bot
 
 import (
@@ -3365,7 +3422,7 @@ func (bot *Bot) getChatInfo(
 }
 
 
-=== File: ./secret/secret.go ===
+=== File: ./tg-handler/secret/secret.go ===
 package secret
 
 import (
@@ -3436,7 +3493,7 @@ func MustLoadAPIKeys(logger *logging.Logger) []string {
 }
 
 
-=== File: ./prompts/prompts.go ===
+=== File: ./tg-handler/prompts/prompts.go ===
 package prompts
 
 import (
@@ -3590,7 +3647,7 @@ func fmtCarmaPrompt(
 }
 
 
-=== File: ./logging/logger.go ===
+=== File: ./tg-handler/logging/logger.go ===
 package logging
 
 import (
@@ -3702,7 +3759,7 @@ func (l *Logger) log(
 }
 
 
-=== File: ./logging/attrs.go ===
+=== File: ./tg-handler/logging/attrs.go ===
 package logging
 
 import (
@@ -3819,7 +3876,7 @@ func Signal(s string) slog.Attr {
 }
 
 
-=== File: ./tags/tags.go ===
+=== File: ./tg-handler/tags/tags.go ===
 package tags
 
 import (
@@ -3964,7 +4021,7 @@ func (t tag) String() string {
 }
 
 
-=== File: ./go.sum ===
+=== File: ./tg-handler/go.sum ===
 github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1 h1:wG8n/XJQ07TmjbITcGiUaOtXxdrINDz1b0J1w0SzqDc=
 github.com/go-telegram-bot-api/telegram-bot-api/v5 v5.5.1/go.mod h1:A2S0CWkNylc2phvKXWBBdD3K0iGnDBGbzRpISP2zBl8=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
@@ -3977,7 +4034,7 @@ google.golang.org/protobuf v1.36.11 h1:fV6ZwhNocDyBLK0dj+fg8ektcVegBBuEolpbTQyBN
 google.golang.org/protobuf v1.36.11/go.mod h1:HTf+CrKn2C3g5S8VImy6tdcUvCska2kB7j23XfzDpco=
 
 
-=== File: ./carma/carma.go ===
+=== File: ./tg-handler/carma/carma.go ===
 package carma
 
 import (
@@ -4073,5 +4130,137 @@ func (c *Carma) Apply(u Update) {
 func Fallback() Update {
 	return UpdateNeutral
 }
+
+
+=== File: ./install.sh ===
+# Install dependencies
+sudo apt update && sudo apt install -y --no-install-recommends \
+   curl \
+   gnupg2
+
+# Get NVIDIA repository
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+    | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+    | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+    | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+sudo apt-get update
+
+
+# Install NVIDIA Container Toolkit
+sudo apt-get install -y nvidia-container-toolkit
+
+# Configure Docker to use NVIDIA driver
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+
+
+=== File: ./docker-compose.yml ===
+services:
+  tg-handler:
+    image: veotri/tg-handler:v0.5.1
+    build:
+      context: .
+      dockerfile: tg-handler/Dockerfile
+    environment:
+      API_KEYS_FILE: /run/secrets/api_keys
+      LLM_MODEL: ${LLM_MODEL}
+    volumes:
+      - ./confs:/app/confs:ro
+      - ./history:/app/history 
+    networks:
+      - ollama-network
+    secrets:
+      - api_keys
+    depends_on:
+      ollama:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - ollama-network
+    ports:
+      - "11435:11434"
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        # Stop script on error
+        set -e
+
+        # --- START SERVER ---
+        echo 'Starting server...'
+        ollama serve &
+        PID=$$!
+
+        # Wait until server responds
+        echo 'Waiting for Ollama API...'
+        while ! ollama list > /dev/null 2>&1; do
+            sleep 1
+        done
+        # --- START SERVER END ---
+
+        # --- TRY PULLING 5 TIMES ---
+        echo "Pulling model: ${LLM_MODEL}..."
+        n=0
+        until [ "$$n" -ge 5 ]
+        do
+           echo "Attempt $((n+1))/5 to pull model..."
+           ollama pull ${LLM_MODEL} && break
+           n=$$(($$n+1))
+           echo "Pull failed. Retrying in 10 seconds..."
+           sleep 10
+        done
+        
+        # Check if failed
+        if [ "$$n" -eq 5 ]; then
+           echo "Failed to pull model after 5 attempts."
+           exit 1
+        fi
+        # --- TRY PULLING 5 TIMES END ---
+
+        # --- LOAD MODEL ---
+        echo 'Loading model into memory...'
+        echo 'no think, dot' | ollama run ${LLM_MODEL} > /dev/null
+        
+        # Report success
+        echo 'Model loaded successfully!'
+        wait $$PID
+        # --- LOAD MODEL END ---
+    healthcheck: # Wait for 3 hours and 5 minutes
+      test:
+        - CMD-SHELL
+        - ollama ps | grep -q ${LLM_MODEL}
+      interval: 10s
+      timeout: 10s
+      retries: 1000
+      start_period: 300s
+
+volumes:
+  ollama-data:
+
+networks:
+  ollama-network:
+
+secrets:
+  api_keys:
+    file: api_keys.txt
+
+
+=== File: ./.gitignore ===
+history/history.pb
+api_keys.txt
 
 
