@@ -17,6 +17,7 @@ import (
 	"tg-handler/model"
 	"tg-handler/names"
 	"tg-handler/prompts"
+	"tg-handler/translator"
 )
 
 // Bot errors
@@ -229,6 +230,12 @@ func (bot *Bot) reply(
 
 	// Reply as model
 	text, err := model.Reply(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Translate via translator
+	text, err = translator.Translate(text)
 	if err != nil {
 		return nil, err
 	}

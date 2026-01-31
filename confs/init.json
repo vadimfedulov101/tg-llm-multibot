@@ -15,13 +15,13 @@
             "carma": "Judge the interaction with user '%s' from the perspective of %s.\n\nTask: Did the user's behavior in the last message improve (+), worsen (-), or maintain (=) your opinion of them? Respond ONLY with a sign.\n\nMemory:\n%s\n\nYour reply:\n%s\n\n%s's current carma: %s\n\nUpdate (-/=/+): "
         },
         "allowed_chats": {
-            "usernames": ["veotri"],
+            "usernames": [ "veotri" ],
             "ids": []
         },
         "memory_limits": {
             "chat_queue": 50,
             "reply_chain": 50,
-            "tags":        33
+            "tags":        15
         }
     }
 }
