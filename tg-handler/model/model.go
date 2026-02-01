@@ -189,9 +189,11 @@ func (m *Model) genCandidates(
 	}
 
 	// Log final success
-	logger.With(
+	logger.Info("candidates generated")
+	logger.Debug(
+		"canidates generation took",
 		logging.Duration(time.Since(start)),
-	).Info("candidates generated")
+	)
 	return candidates, nil
 }
 

@@ -90,7 +90,7 @@ func Iter(n int) slog.Attr {
 }
 
 func Duration(d time.Duration) slog.Attr {
-	return slog.String("duration", d.String())
+	return slog.String("duration", d.Round(time.Second).String())
 }
 
 func Candidate(s string) slog.Attr {

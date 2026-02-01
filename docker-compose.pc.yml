@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0
-      - LLM_MODEL=${LLM_MODEL} # Pass model name for the script
+      - LLM_MODEL=${LLM_MODEL}
     deploy:
       resources:
         reservations:
@@ -17,7 +17,6 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    # Restored the robust startup script
     entrypoint:
       - /bin/sh
       - -c

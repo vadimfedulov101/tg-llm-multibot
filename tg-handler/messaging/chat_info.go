@@ -70,7 +70,7 @@ func getChatTitle(
 	isPrivate bool,
 ) string {
 	if isPrivate {
-		return fmt.Sprintf("%s's private", sender)
+		return fmt.Sprintf("%s's private chat", sender)
 	}
 	return chat.Title
 }
