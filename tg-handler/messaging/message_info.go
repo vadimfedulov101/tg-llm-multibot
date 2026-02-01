@@ -12,6 +12,7 @@ import (
 
 // Message info errors
 var (
+	errNilMessage     = errors.New("message is nil")
 	errMsgEmptySender = errors.New("empty sender of message")
 	errMsgEmptyText   = errors.New("empty text of message")
 )
@@ -40,6 +41,11 @@ func NewMessageInfo(
 	modifyMentions func(string) string,
 	level int,
 ) (*MessageInfo, error) {
+	// Handle nil message
+	if msg == nil {
+		return nil, errNilMessage
+	}
+
 	// Handle nil and too deep recursion
 	if msg == nil || level > 2 {
 		return nil, nil
