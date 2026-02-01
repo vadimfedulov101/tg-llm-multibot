@@ -27,6 +27,7 @@ var (
 
 // Request to Ollama
 type Request struct {
+	ApiUrl       string
 	Model        string                `json:"model"`
 	Prompt       string                `json:"prompt"`
 	Stream       bool                  `json:"stream"`
@@ -38,11 +39,13 @@ type Request struct {
 
 func newRequest(
 	prompt string,
+	apiUrl string,
 	model string,
 	botConf *conf.BotConf,
 	cleaner func(string) string,
 ) *Request {
 	return &Request{
+		ApiUrl:       apiUrl,
 		Model:        model,
 		Prompt:       prompt,
 		Stream:       false,
@@ -80,7 +83,7 @@ func sendRequestEternal(
 
 	// Get text
 	for {
-		// Check if parent context (shutdown is done before trying)
+		// Check if parent context shut down before trying
 		if ctx.Err() != nil {
 			return "", ErrCtxDone
 		}
@@ -122,7 +125,7 @@ func sendRequest(
 
 	// Make POST request with JSON data
 	req, err := http.NewRequestWithContext(
-		reqCtx, "POST", apiUrl, bytes.NewBuffer(jsonData),
+		reqCtx, "POST", request.ApiUrl, bytes.NewBuffer(jsonData),
 	)
 	if err != nil {
 		return "", fmt.Errorf("%w: %v", errRequestFailed, err)

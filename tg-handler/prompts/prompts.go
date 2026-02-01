@@ -69,16 +69,6 @@ func FinFmtSelectPrompt(prompt string, candidates []string) string {
 	return fmt.Sprintf(prompt, candidates)
 }
 
-// Finalizes tags prompt formatting
-func FinFmtTagsPrompt(prompt string, replyLine string) string {
-	return fmt.Sprintf(prompt, replyLine)
-}
-
-// Finalizes carma prompt formatting
-func FinFmtCarmaPrompt(prompt string, replyLine string) string {
-	return fmt.Sprintf(prompt, replyLine)
-}
-
 // Formats response prompt
 func fmtResponsePrompt(
 	template string,
@@ -124,7 +114,6 @@ func fmtTagsPrompt(
 
 	return fmt.Sprintf(template,
 		userName, botName, memory,
-		"%s", // Final response placeholder
 		userName, contact.Tags,
 		userName, lim,
 	)
@@ -145,7 +134,6 @@ func fmtCarmaPrompt(
 
 	return fmt.Sprintf(template,
 		userName, botName, memory,
-		"%s", // Final response placeholder
 		userName, contact.Carma,
 	)
 }

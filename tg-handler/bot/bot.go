@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"sync"
+	"time"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -53,8 +54,9 @@ func New(
 	// Authorize as bot
 	bot, err := tg.NewBotAPI(apiKey)
 	if err != nil {
-		logger.With(logging.ApiKey(apiKey)).
-			Panic("not authorized", logging.Err(errAuthFailed))
+		logger.With(
+			logging.ApiKey(apiKey),
+		).Panic("not authorized", logging.Err(errAuthFailed))
 	}
 
 	// Get user name
@@ -137,12 +139,13 @@ func (bot *Bot) handleUpdate(ctx context.Context, upd tg.Update) {
 
 	// Get chat info and check if allowed
 	chatInfo := bot.getChatInfo(msgInfo)
-	logger = logger.With(logging.ChatID(chatInfo.ID))
-	logger = logger.With(logging.UserName(msgInfo.Sender()))
+	logger = logger.With(logging.ChatTitle(chatInfo.Title))
 	if !chatInfo.IsAllowed {
+		logger = logger.With(logging.ChatID(chatInfo.ID))
 		logger.Error(errMsg, logging.Err(errChatNotAllowed))
 		return
 	}
+	logger = logger.With(logging.UserName(msgInfo.Sender()))
 
 	// Safe to chat queue if not triggered
 	if !chatInfo.LastMsg.IsTriggering {
@@ -163,7 +166,7 @@ func (bot *Bot) handleMessage(
 ) {
 	const errMsg = "message not handled"
 
-	logger.Info("got message")
+	logger.Info("triggered by message")
 
 	// Add new message to history
 	chatInfo.History.AddToBoth(chatInfo.LastMsg, logger)
@@ -190,20 +193,18 @@ func (bot *Bot) handleMessage(
 	)
 
 	bot.wg.Go(func() {
-		// Reply as bot with valid info
+		// Reply as bot with valid reply info
 		replyInfo, err := bot.reply(ctx, model, chatInfo)
 		if err != nil {
 			logger.Error(errMsg, logging.Err(err))
 			return
 		}
 
-		// Add reply to history
+		// Add reply info to history
 		chatInfo.History.AddToBoth(replyInfo, logger)
 
-		// Reflect on reply as model
-		err = model.Reflect(
-			ctx, chatInfo.LastMsg.Sender(), replyInfo,
-		)
+		// Reflect as model
+		err = model.Reflect(ctx, chatInfo.LastMsg.Sender())
 		if err != nil {
 			logger.Error(errMsg, logging.Err(err))
 			return
@@ -223,8 +224,15 @@ func (bot *Bot) reply(
 	var replyInfo *messaging.MessageInfo
 	var err error
 
+	model.Logger.Info("replying message")
+
+	// Get start time
+	start := time.Now()
+
 	// Type until reply
-	typingCtx, cancel := context.WithCancel(ctx)
+	typingCtx, cancel := context.WithTimeout(
+		ctx, messaging.TypingPeriod,
+	)
 	go messaging.Type(typingCtx, bot.API, chatInfo, model.Logger)
 	defer cancel()
 
@@ -247,6 +255,10 @@ func (bot *Bot) reply(
 		return nil, fmt.Errorf("%w: %v", errMsgMalformed, err)
 	}
 
+	// Log replying
+	model.Logger.With(
+		logging.Duration(time.Since(start)),
+	).Info("message replied")
 	return replyInfo, nil
 }
 

@@ -3,6 +3,7 @@ package translator
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/bregydoc/gtranslate"
 )
@@ -13,15 +14,36 @@ var (
 	)
 )
 
-// Translates message to language based on its tag
-func Translate(msg string) (string, error) {
-	msg, err := gtranslate.TranslateWithParams(msg, gtranslate.TranslationParams{
-		From: "en",
-		To:   "eo",
-	})
-	if err != nil {
-		return "", fmt.Errorf("%w: %v", errMsgTranslationFailed, err)
+const (
+	maxRetries = 10
+	retryDelay = 5 * time.Second
+)
+
+// Translates original to language based on its tag
+func Translate(original string) (string, error) {
+	var err error
+	var translated string
+
+	for i := range maxRetries {
+		translated, err = gtranslate.TranslateWithParams(
+			original,
+			gtranslate.TranslationParams{
+				From: "en",
+				To:   "eo",
+			},
+		)
+
+		// If success, return immediately
+		if err == nil {
+			return translated, nil
+		}
+
+		// If failed, wait before retrying (unless last attempt)
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+		}
 	}
 
-	return msg, nil
+	// Return the last error if all retries failed
+	return "", fmt.Errorf("%w: %v", errMsgTranslationFailed, err)
 }

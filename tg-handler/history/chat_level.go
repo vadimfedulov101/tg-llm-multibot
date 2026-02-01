@@ -26,15 +26,18 @@ type prevLineProvider interface {
 }
 
 // Chat level errors
-const replyChainLenToAdd = 2
+const (
+	chatQueueLenToAdd  = 1
+	replyChainLenToAdd = 2
+)
 
 var (
 	errReplyChainTooLong = fmt.Errorf(
-		"reply chain longer than %d to be added",
+		"reply chain longer than %d cannot be added",
 		replyChainLenToAdd,
 	)
 	errReplyChainTooShort = fmt.Errorf(
-		"reply chain shorter than %d to be added",
+		"reply chain shorter than %d cannot be added",
 		replyChainLenToAdd,
 	)
 )
@@ -118,8 +121,13 @@ func (scq *SafeChatQueue) Get(
 	scq.mu.RLock()
 	defer scq.mu.RUnlock()
 
-	// Call private getter
-	return scq.ChatQueue.get(lim, logger)
+	// Get chat queue
+	cq := scq.ChatQueue.get(lim)
+
+	// Log getting chat queue
+	logger = logger.With(logging.ChatQueueLen(len(cq)))
+	logger.Debug("got chat queue")
+	return cq
 }
 
 // Gets chain from reply chains with limit
@@ -130,8 +138,13 @@ func (src *SafeReplyChains) Get(
 	src.mu.RLock()
 	defer src.mu.RUnlock()
 
-	// Call private getter
-	return src.ReplyChains.get(lc, lim, logger)
+	// Get reply chain
+	rc := src.ReplyChains.get(lc, lim)
+
+	// Log getting reply chain
+	logger = logger.With(logging.ReplyChainLen(len(rc)))
+	logger.Debug("got reply chain")
+	return rc
 }
 
 // Adds data to chat queue and reply chains
@@ -181,19 +194,25 @@ func (cq *ChatQueue) add(
 ) {
 	var line = lc.Line()
 
-	// Check if line added to shared queue
+	// Check if duplicate for shared queue
 	if isShared {
-		lastLine := cq.get(1, logger)[0]
-		if lastLine == line {
-			logger.Debug("line skipped as added")
-			return
+		// Get last lines enough to add
+		lines := cq.get(chatQueueLenToAdd)
+
+		// Check for duplicates only for non-empty queue
+		if len(lines) > 0 {
+			lastLine := lines[0]
+			if lastLine == line {
+				logger.Debug("line skipped as added")
+				return
+			}
 		}
 	}
 
 	// Add line
 	*cq = append(*cq, *NewMessageEntry(line))
 
-	// Log line added
+	// Log adding line
 	logger = logger.With(logging.LastLine(line))
 	logger.Debug("line added")
 }
@@ -203,7 +222,7 @@ func (rc ReplyChains) add(
 	lc LineChain, logger *logging.Logger,
 ) {
 	// Get chain
-	chain := rc.get(lc, replyChainLenToAdd, logger)
+	chain := rc.get(lc, replyChainLenToAdd)
 
 	// Check chain length
 	logger = logger.With(logging.ReplyChainLen(len(chain)))
@@ -224,20 +243,15 @@ func (rc ReplyChains) add(
 	)
 	rc[lastLine] = *NewMessageEntry(prevLine)
 
-	// Log chain added
+	// Log adding reply chain
 	logger = logger.With(logging.PrevLine(prevLine))
 	logger = logger.With(logging.LastLine(lastLine))
 	logger.Debug("reply chain added")
 }
 
 // Gets lines from chat queue with limit
-func (cq ChatQueue) get(lim int, logger *logging.Logger) []string {
+func (cq ChatQueue) get(lim int) []string {
 	queue := make([]string, 0, lim)
-
-	// DO WE NEED A CHECK HERE LIKE
-	// if len(cq) < 1 { return } ?
-	// because if the rest of the code
-	// works well with zero len, we don't
 
 	// Shift by limit if exceeded
 	shift := min(len(cq), lim)
@@ -249,16 +263,11 @@ func (cq ChatQueue) get(lim int, logger *logging.Logger) []string {
 		queue = append(queue, msg.Line)
 	}
 
-	// Log getting chat queue
-	logger = logger.With(logging.ChatQueueLen(len(queue)))
-	logger.Debug("got chat queue")
 	return queue
 }
 
 // Gets reply chain with limit
-func (rc ReplyChains) get(
-	lc LineChain, lim int, logger *logging.Logger,
-) []string {
+func (rc ReplyChains) get(lc LineChain, lim int) []string {
 	var (
 		prevLine = lc.PrevLine()
 		lastLine = lc.Line()
@@ -268,10 +277,8 @@ func (rc ReplyChains) get(
 
 	// Handle incomplete reply chain
 	if prevLine == "" {
-		logger.Debug("incomplete reply chain, no unroll")
 		return chain
 	}
-	logger.Debug("complete reply chain, proceed to unroll")
 
 	// Accumulate lines unrolling reply chain backwards up to limit
 	chain = append(chain, prevLine)
@@ -290,8 +297,5 @@ func (rc ReplyChains) get(
 		chain[i], chain[j] = chain[j], chain[i]
 	}
 
-	// Log getting reply chain
-	logger = logger.With(logging.ReplyChainLen(len(chain)))
-	logger.Debug("got reply chain")
 	return chain
 }

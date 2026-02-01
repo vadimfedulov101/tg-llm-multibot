@@ -16,6 +16,10 @@ var (
 	errSignalFailed = errors.New("signal request failed")
 )
 
+const (
+	TypingPeriod = 5 * time.Minute
+)
+
 // Sends typing signal until context done
 func Type(
 	ctx context.Context, bot *tg.BotAPI, c *ChatInfo,

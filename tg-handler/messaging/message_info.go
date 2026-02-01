@@ -47,7 +47,7 @@ func NewMessageInfo(
 
 	// Get sender and text
 	var (
-		sender = getSender(msg)
+		sender = getSender(msg, bot)
 		text   = getText(msg)
 	)
 
@@ -117,7 +117,11 @@ func (m *MessageInfo) Sender() string {
 }
 
 // Gets UserName | FirstName (+LastName)
-func getSender(msg *tg.Message) string {
+// Explicitly replaces Bot's name with FirstName for consistency
+func getSender(msg *tg.Message, bot *tg.BotAPI) string {
+	if msg.From.ID == bot.Self.ID {
+		return bot.Self.FirstName
+	}
 	return msg.From.String()
 }
 

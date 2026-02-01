@@ -3,6 +3,7 @@ package messaging
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
@@ -13,6 +14,11 @@ import (
 var (
 	errDirectReplyFailed   = errors.New("direct reply failed")
 	errIndirectReplyFailed = errors.New("indirect reply failed")
+)
+
+const (
+	maxRetries = 10
+	retryDelay = 5 * time.Second
 )
 
 // Try to reply twice: with reply, with separate message
@@ -38,7 +44,7 @@ func Reply(
 	m.ReplyToMessageID = msgID
 
 	// Try to reply with reply
-	response, err := bot.Send(m)
+	response, err := sendWithRetry(bot, m)
 	if err != nil { // Try to reply with separate message
 		logger.Error(errDirectMsg, logging.Err(
 			fmt.Errorf("%w: %v", errDirectReplyFailed, err),
@@ -46,7 +52,7 @@ func Reply(
 
 		m.ReplyToMessageID = 0
 		m.Text = fmt.Sprintf(ReplyToDelT, c.LastMsg.Line(), text)
-		response, err = bot.Send(m)
+		response, err = sendWithRetry(bot, m)
 	}
 	if err != nil {
 		logger.Error(errIndirectMsg, logging.Err(
@@ -55,4 +61,22 @@ func Reply(
 	}
 
 	return &response
+}
+
+// Helper to retry sending messages on temporary network failures
+func sendWithRetry(bot *tg.BotAPI, msg tg.MessageConfig) (tg.Message, error) {
+	var err error
+	var resp tg.Message
+
+	for i := range maxRetries {
+		resp, err = bot.Send(msg)
+		if err == nil {
+			return resp, nil
+		}
+
+		if i < maxRetries-1 {
+			time.Sleep(retryDelay)
+		}
+	}
+	return resp, err
 }

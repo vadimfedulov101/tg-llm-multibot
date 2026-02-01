@@ -32,12 +32,12 @@ func (history *History) Saver(
 		select {
 		case _, ok := <-updateCh:
 			if !ok {
-				logger.Error("history update channel was closed")
+				logger.Info("history update channel was closed")
 				return
 			}
 			history.Save(path, logger)
 		case <-ctx.Done():
-			logger.Error("saver received shutdown signal")
+			logger.Info("saver received shutdown signal")
 			return
 		}
 	}

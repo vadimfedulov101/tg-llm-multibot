@@ -17,6 +17,10 @@ func BotName(name string) slog.Attr {
 	return slog.String("bot_name", name)
 }
 
+func ChatTitle(title string) slog.Attr {
+	return slog.String("chat_title", title)
+}
+
 func ChatID(id int64) slog.Attr {
 	return slog.Int64("chat_id", id)
 }

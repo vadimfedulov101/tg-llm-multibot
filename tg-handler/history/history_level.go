@@ -83,7 +83,9 @@ func MustLoadHistory(
 	} else if err != nil {
 		logger.Panic(
 			errMsg,
-			logging.Err(fmt.Errorf("%w: %v", errReadFailed, err)),
+			logging.Err(
+				fmt.Errorf("%w: %v", errReadFailed, err),
+			),
 		)
 	}
 

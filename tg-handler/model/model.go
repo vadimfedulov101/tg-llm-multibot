@@ -21,7 +21,8 @@ import (
 // Constants
 const (
 	envModelVar  = "LLM_MODEL"
-	apiUrl       = "http://ollama:11434/api/generate"
+	envApiUrlVar = "LLM_API_URL"
+	defApiUrl    = "http://ollama:11434/api/generate"
 	retryTime    = 10 * time.Second
 	waitTimeout  = 2 * time.Minute
 	maxSelectTry = 5
@@ -52,6 +53,7 @@ var (
 // LLM model
 type Model struct {
 	Name      string
+	ApiUrl    string
 	Config    *conf.BotConf
 	Prompts   *prompts.Prompts
 	Memory    *memory.Memory
@@ -73,12 +75,20 @@ func New(
 	// Get model name
 	name, ok := os.LookupEnv(envModelVar)
 	if !ok {
-		logger.With(logging.EnvVar(envModelVar)).
-			Panic(errMsg, logging.Err(errGetEnvFailed))
+		logger.With(
+			logging.EnvVar(envModelVar),
+		).Panic(errMsg, logging.Err(errGetEnvFailed))
+	}
+
+	// Get API URL (default to internal docker DNS if not set)
+	apiUrl, ok := os.LookupEnv(envApiUrlVar)
+	if !ok {
+		apiUrl = defApiUrl
 	}
 
 	return &Model{
 		Name:      name,
+		ApiUrl:    apiUrl,
 		Config:    botConf,
 		Prompts:   prompts,
 		Memory:    memory,
@@ -104,11 +114,7 @@ func (m *Model) Reply(ctx context.Context) (string, error) {
 }
 
 // Reflects on response
-func (m *Model) Reflect(
-	ctx context.Context,
-	user string,
-	reply Message,
-) error {
+func (m *Model) Reflect(ctx context.Context, user string) error {
 	var (
 		botContacts = m.Memory.BotContacts
 	)
@@ -117,14 +123,14 @@ func (m *Model) Reflect(
 	botContact := botContacts.Get(user)
 
 	// Update carma
-	carmaUpdate, err := m.genCarmaUpdate(ctx, reply.Line())
+	carmaUpdate, err := m.genCarmaUpdate(ctx)
 	if errors.Is(err, ErrCtxDone) {
 		return err
 	}
 	botContact.Carma.Apply(carmaUpdate)
 
 	// Update persona
-	tags, err := m.genTags(ctx, reply.Line())
+	tags, err := m.genTags(ctx)
 	if errors.Is(err, ErrCtxDone) {
 		return err
 	}
@@ -172,9 +178,12 @@ func (m *Model) genCandidates(
 		candidates = append(candidates, candidate)
 
 		// Log successs
-		iterLog.Debug(
+		iterLog.Info(
 			"candidate generated",
 			logging.Candidate(candidate),
+		)
+		iterLog.Debug(
+			"candidate generation took",
 			logging.Duration(time.Since(iStart)),
 		)
 	}
@@ -227,6 +236,9 @@ func (m *Model) selectBestCandidate(
 			iterLog.Info(
 				"candidate selected",
 				logging.Candidate(candidateSelected),
+			)
+			iterLog.Debug(
+				"candidate selection took",
 				logging.Duration(time.Since(start)),
 			)
 			return candidateSelected, nil
@@ -239,24 +251,21 @@ func (m *Model) selectBestCandidate(
 	}
 
 	// Fall back
-	logger.Info("using fallback value for candidates")
+	logger.Error("using fallback value for candidates")
 	return candidates.Fallback(), nil
 }
 
 // Generates unique tags
 func (m *Model) genTags(
 	ctx context.Context,
-	replyLine string,
 ) (tags.Tags, error) {
 	logger := m.Logger
 
 	// Get start time
 	start := time.Now()
 
-	// Format prompt
-	prompt := prompts.FinFmtTagsPrompt(m.Prompts.Tags, replyLine)
 	// Form request
-	request := m.newRequest(prompt)
+	request := m.newRequest(m.Prompts.Tags)
 
 	for i := range maxTagsTry {
 		// Log start
@@ -275,6 +284,9 @@ func (m *Model) genTags(
 			iterLog.Info(
 				"tags generated",
 				logging.Tags(tags.String()),
+			)
+			iterLog.Debug(
+				"tags generation took",
 				logging.Duration(time.Since(start)),
 			)
 			return tags, nil
@@ -289,24 +301,21 @@ func (m *Model) genTags(
 	}
 
 	// Fall back
-	logger.Info("using fallback value for tags")
+	logger.Error("using fallback value for tags")
 	return tags.Fallback(), nil
 }
 
 // Generates carma update
 func (m *Model) genCarmaUpdate(
 	ctx context.Context,
-	replyLine string,
 ) (carma.Update, error) {
 	logger := m.Logger
 
 	// Get start time
 	start := time.Now()
 
-	// Format prompt
-	prompt := prompts.FinFmtCarmaPrompt(m.Prompts.Carma, replyLine)
 	// Form request
-	request := m.newRequest(prompt)
+	request := m.newRequest(m.Prompts.Carma)
 
 	for i := range maxCarmaTry {
 		// Log start
@@ -325,6 +334,9 @@ func (m *Model) genCarmaUpdate(
 			iterLog.Info(
 				"carma update generated",
 				logging.CarmaUpdate(carmaUpdate.String()),
+			)
+			iterLog.Debug(
+				"carma update generation took",
 				logging.Duration(time.Since(start)),
 			)
 			return carmaUpdate, nil
@@ -340,13 +352,15 @@ func (m *Model) genCarmaUpdate(
 	}
 
 	// Fall back
-	logger.Info("using fallback value for carma update")
+	logger.Error("using fallback value for carma update")
 	return carma.Fallback(), nil
 }
 
 // Forms new request using model's model and config
 func (m *Model) newRequest(prompt string) *Request {
-	return newRequest(prompt, m.Name, m.Config, m.getReplyCleaner())
+	return newRequest(
+		prompt, m.ApiUrl, m.Name, m.Config, m.getReplyCleaner(),
+	)
 }
 
 // Gets reply cleaner

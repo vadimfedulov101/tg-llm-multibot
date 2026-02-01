@@ -18,10 +18,10 @@ const (
 	selectSNum = 3
 	selectDNum = 1
 
-	tagsSNum = 7
+	tagsSNum = 6
 	tagsDNum = 1
 
-	carmaSNum = 6
+	carmaSNum = 5
 	carmaDNum = 0
 )
 
