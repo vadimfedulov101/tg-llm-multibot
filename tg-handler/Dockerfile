@@ -7,7 +7,6 @@ WORKDIR /build
 
 ENV CGO_ENABLED=0
 ENV GOOS=linux
-ENV GOARCH=amd64
 
 # Dependencies
 RUN apk update && apk add --no-cache protoc git
