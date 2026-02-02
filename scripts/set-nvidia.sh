@@ -1,3 +1,6 @@
+#!/bin/sh
+set -e
+
 # Install dependencies
 sudo apt update && sudo apt install -y --no-install-recommends \
    curl \
