@@ -56,8 +56,10 @@ func MustLoadBotConf(
 		)
 	}
 
-	// Validate token limit
-	botConf.Optional = *mergeOptions(&botConf.Optional, defaults)
+	// Set options to defaults
+	botConf.Optional = *mergeOptions(
+		&botConf.Optional, defaults, logger,
+	)
 
 	// Validate candidate number or panic
 	mustValidateCandidateNum(&botConf, logger)
@@ -66,9 +68,13 @@ func MustLoadBotConf(
 }
 
 // Helper to merge options (Bot overrides Default)
-func mergeOptions(bot, def *OptionalSettings) *OptionalSettings {
+func mergeOptions(
+	bot, def *OptionalSettings,
+	logger *logging.Logger,
+) *OptionalSettings {
 	if bot.Temperature == 0 {
 		bot.Temperature = def.Temperature
+		logger.Info("set temperature to new value")
 	}
 	if bot.RepeatPenalty == 0 {
 		bot.RepeatPenalty = def.RepeatPenalty
@@ -81,6 +87,7 @@ func mergeOptions(bot, def *OptionalSettings) *OptionalSettings {
 	}
 	if bot.NumPredict == 0 {
 		bot.NumPredict = def.NumPredict
+		logger.Info("set num_predict to new value")
 	}
 	if bot.Seed == 0 {
 		bot.Seed = def.Seed
