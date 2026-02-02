@@ -18,7 +18,7 @@ import (
 	"tg-handler/model"
 	"tg-handler/names"
 	"tg-handler/prompts"
-	"tg-handler/translator"
+	// "tg-handler/translator"
 )
 
 // Bot errors
@@ -243,10 +243,10 @@ func (bot *Bot) reply(
 	}
 
 	// Translate via translator
-	text, err = translator.Translate(text)
-	if err != nil {
-		return nil, err
-	}
+	// text, err = translator.Translate(text)
+	// if err != nil {
+	//	return nil, err
+	//}
 
 	// Reply as bot
 	reply := messaging.Reply(bot.API, chatInfo, text, model.Logger)
