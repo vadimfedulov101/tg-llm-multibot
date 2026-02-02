@@ -4,7 +4,4 @@
 	    "cmd_prompts": {},
 	    "candidate_num": 3
     },
-    "options": {
-        "temperature": 0.2
-    }
 }

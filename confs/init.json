@@ -22,6 +22,10 @@
             "chat_queue":  50,
             "reply_chain": 50,
             "tags":        15
+        },
+        "default_options": {
+            "temperature": 0.2,
+            "num_predict": 500
         }
     }
 }
