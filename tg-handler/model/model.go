@@ -24,7 +24,7 @@ const (
 	envApiUrlVar = "LLM_API_URL"
 	defApiUrl    = "http://ollama:11434/api/generate"
 	retryTime    = 10 * time.Second
-	waitTimeout  = 2 * time.Minute
+	waitTimeout  = 5 * time.Minute
 	maxSelectTry = 5
 	maxTagsTry   = 5
 	maxCarmaTry  = 5
