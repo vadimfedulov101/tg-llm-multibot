@@ -99,7 +99,7 @@ func MustLoadInitConf(
 	const errMsg = "failed to load init config"
 	logger = logger.With(
 		logging.ConfigType("init"),
-		logging.Path(path),
+		logging.ConfigPath(path),
 	)
 	// --- LOGGER ---
 
