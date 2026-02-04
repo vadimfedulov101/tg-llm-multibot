@@ -10,6 +10,7 @@ func DenoiseResponse(
 ) string {
 
 	s = trimThinking(s)
+	s = strings.ReplaceAll(s, "*", "")
 	s = trimNonReply(s, botName, userName)
 
 	return s
