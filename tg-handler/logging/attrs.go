@@ -57,14 +57,18 @@ func EnvVar(s string) slog.Attr {
 	return slog.String("env_var", s)
 }
 
-func Path(path string) slog.Attr {
-	return slog.String("path", path)
+func EnvPath(p string) slog.Attr {
+	return slog.String("env_path", p)
 }
 
 // --- CONFIG ---
 
 func ConfigType(t string) slog.Attr {
 	return slog.String("config_type", t)
+}
+
+func ConfigPath(p string) slog.Attr {
+	return slog.String("config_path", p)
 }
 
 func TemplateType(t string) slog.Attr {
@@ -115,4 +119,36 @@ func RawResponse(s string) slog.Attr {
 
 func Signal(s string) slog.Attr {
 	return slog.String("signal", s)
+}
+
+// --- OPTIONAL PARAMETERS ---
+
+func Temperature(t float32) slog.Attr {
+	return slog.Float64("temperature", float64(t))
+}
+
+func RepeatPenalty(rp float32) slog.Attr {
+	return slog.Float64("repeat_penalty", float64(rp))
+}
+
+func TopP(tp float32) slog.Attr {
+	return slog.Float64("top_p", float64(tp))
+}
+
+func TopK(tk int) slog.Attr {
+	return slog.Int("top_k", tk)
+}
+
+func NumPredict(n int) slog.Attr {
+	return slog.Int("num_predict", n)
+}
+
+func Seed(s int) slog.Attr {
+	return slog.Int("seed", s)
+}
+
+// --- OPTIONAL PARAMETERS METADATA ---
+
+func OptionSource(s string) slog.Attr {
+	return slog.String("option_source", s)
 }

@@ -31,7 +31,7 @@ func MustLoadAPIKeys(logger *logging.Logger) []string {
 	if !ok {
 		logger.Panic(errMsg, logging.Err(errGetEnvFailed))
 	}
-	logger = logger.With(logging.Path(path))
+	logger = logger.With(logging.EnvPath(path))
 
 	// Read secret file from path
 	content, err := os.ReadFile(path)

@@ -22,11 +22,11 @@ func trimThinking(s string) string {
 		endTag   = "</think>"
 	)
 
-	// Skip everything before the last end tag
+	// Trim up to the last end tag
 	if endIdx := strings.LastIndex(s, endTag); endIdx != -1 {
 		s = s[endIdx+len(endTag):]
 	}
-	// Skip everything after the first start tag
+	// Trim after the not-closed start tag
 	if startIdx := strings.Index(s, startTag); startIdx != -1 {
 		s = s[:startIdx]
 	}
@@ -42,10 +42,11 @@ func trimNonReply(s string, botName string, userName string) string {
 		userTag = userName + ":"
 	)
 
-	// Trim bot tag as reply prefix
-	s = strings.TrimPrefix(s, botTag)
-
-	// Trim replying for user
+	// Trim up to bot tag (providing history)
+	if startIdx := strings.Index(s, botTag); startIdx != -1 {
+		s = s[startIdx:]
+	}
+	// Trim after user tag (replying for user)
 	if startIdx := strings.Index(s, userTag); startIdx != -1 {
 		s = s[:startIdx]
 	}

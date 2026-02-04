@@ -3,10 +3,17 @@ package conf
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"os"
 
 	"tg-handler/logging"
+
+	"golang.org/x/exp/constraints"
 )
+
+type Number interface {
+	constraints.Integer | constraints.Float
+}
 
 // Bot config
 type BotConf struct {
@@ -23,7 +30,7 @@ type MainSettings struct {
 // Loads settings or panics
 func MustLoadBotConf(
 	path string,
-	defaults *OptionalSettings,
+	initConfOptional *OptionalSettings,
 	logger *logging.Logger,
 ) *BotConf {
 	var botConf BotConf
@@ -32,7 +39,7 @@ func MustLoadBotConf(
 	const errMsg = "failed to load bot config"
 	logger = logger.With(
 		logging.ConfigType("bot"),
-		logging.Path(path),
+		logging.ConfigPath(path),
 	)
 	// --- LOGGER ---
 
@@ -56,9 +63,9 @@ func MustLoadBotConf(
 		)
 	}
 
-	// Set options to defaults
-	botConf.Optional = *mergeOptions(
-		&botConf.Optional, defaults, logger,
+	// Set options
+	setOptions(
+		&botConf.Optional, initConfOptional, logger,
 	)
 
 	// Validate candidate number or panic
@@ -67,32 +74,60 @@ func MustLoadBotConf(
 	return &botConf
 }
 
-// Helper to merge options (Bot overrides Default)
-func mergeOptions(
-	bot, def *OptionalSettings,
+// Sets bot options from non-zero bot options with precedence,
+// sets from init options as a fall back
+func setOptions(
+	bot, init *OptionalSettings,
 	logger *logging.Logger,
-) *OptionalSettings {
-	if bot.Temperature == 0 {
-		bot.Temperature = def.Temperature
-		logger.Info("set temperature to new value")
+) {
+	setOption(
+		bot.Temperature, init.Temperature,
+		"temperature set", logging.Temperature, logger,
+	)
+	setOption(
+		bot.RepeatPenalty, init.RepeatPenalty,
+		"repeat penalty set", logging.RepeatPenalty, logger,
+	)
+	setOption(
+		bot.TopP, init.TopP,
+		"top P set", logging.TopP, logger,
+	)
+	setOption(
+		bot.TopK, init.TopK,
+		"top K set", logging.TopK, logger,
+	)
+	setOption(
+		bot.NumPredict, init.NumPredict,
+		"num predict set", logging.NumPredict, logger,
+	)
+	setOption(
+		bot.Seed, init.Seed,
+		"seed set", logging.Seed, logger,
+	)
+}
+
+// Sets bot option from non-zero bot option with precedence,
+// sets from init option as a fall back
+func setOption[T Number](
+	botOption, initOption T,
+	msgStr string,
+	newAttr func(p T) slog.Attr,
+	logger *logging.Logger,
+) {
+	if botOption == 0 {
+		// Set default option from init config (fallback)
+		botOption = initOption
+		logger = logger.With(
+			logging.OptionSource("init config"),
+		)
+	} else {
+		// Log custom option from bot config (already set)
+		logger = logger.With(
+			logging.OptionSource("bot config"),
+		)
 	}
-	if bot.RepeatPenalty == 0 {
-		bot.RepeatPenalty = def.RepeatPenalty
-	}
-	if bot.TopP == 0 {
-		bot.TopP = def.TopP
-	}
-	if bot.TopK == 0 {
-		bot.TopK = def.TopK
-	}
-	if bot.NumPredict == 0 {
-		bot.NumPredict = def.NumPredict
-		logger.Info("set num_predict to new value")
-	}
-	if bot.Seed == 0 {
-		bot.Seed = def.Seed
-	}
-	return bot
+
+	logger.Info(msgStr, newAttr(botOption))
 }
 
 // Validates candidate num or panics

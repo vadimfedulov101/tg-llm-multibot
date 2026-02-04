@@ -206,6 +206,7 @@ func mustValidateNumOf(
 	}
 
 	// Check placeholder number or panic
+	err := errWrongPlaceholderNum
 	placeholderCount := strings.Count(template, placeholder)
 	logger = logger.With(logging.PlaceholderCount(placeholderCount))
 	if placeholderCount < placeholderNeed {
@@ -213,8 +214,7 @@ func mustValidateNumOf(
 			errMsg,
 			logging.Err(
 				fmt.Errorf(
-					"%w: %v",
-					errWrongPlaceholderNum, errPlaceholderOverflow,
+					"%w: %v", err, errPlaceholderOverflow,
 				),
 			),
 		)
@@ -224,8 +224,7 @@ func mustValidateNumOf(
 			errMsg,
 			logging.Err(
 				fmt.Errorf(
-					"%w: %v",
-					errWrongPlaceholderNum, errPlaceholderUnderflow,
+					"%w: %v", err, errPlaceholderUnderflow,
 				),
 			),
 		)
