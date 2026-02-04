@@ -19,7 +19,7 @@ const InitConfPath = "./confs/init.json"
 
 func main() {
 	// Get logger
-	logger := logging.New(slog.LevelInfo)
+	logger := logging.New(slog.LevelDebug)
 
 	// Load API keys from secret file or panic
 	apiKeys := secret.MustLoadAPIKeys(logger)
