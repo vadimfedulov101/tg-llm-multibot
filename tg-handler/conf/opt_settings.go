@@ -8,4 +8,5 @@ type OptionalSettings struct {
 	TopK          int     `json:"top_k,omitempty"`
 	NumPredict    int     `json:"num_predict,omitempty"`
 	Seed          int     `json:"seed,omitempty"`
+	NumBeams      int     `json:"num_beams,omitempty"`
 }

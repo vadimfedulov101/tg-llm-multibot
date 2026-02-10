@@ -104,6 +104,10 @@ func setOptions(
 		bot.Seed, init.Seed,
 		"seed set", logging.Seed, logger,
 	)
+	setOption(
+		bot.NumBeams, init.NumBeams,
+		"num beams set", logging.NumBeams, logger,
+	)
 }
 
 // Sets bot option from non-zero bot option with precedence,

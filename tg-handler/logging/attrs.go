@@ -147,6 +147,10 @@ func Seed(s int) slog.Attr {
 	return slog.Int("seed", s)
 }
 
+func NumBeams(n int) slog.Attr {
+	return slog.Int("num_beams", n)
+}
+
 // --- OPTIONAL PARAMETERS METADATA ---
 
 func OptionSource(s string) slog.Attr {
