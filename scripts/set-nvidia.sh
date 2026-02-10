@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Clean broken packages
+sudo rm -rf /var/lib/apt/lists/*
+sudo apt clean
+sudo apt update
+
 # Install dependencies
 sudo apt update && sudo apt install -y --no-install-recommends \
    curl \
