@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Deletes conflicting apps
+set_resolve_conflicts() {
+	sudo apt remove $(dpkg --get-selections docker.io docker-compose docker-compose-v2 docker-doc podman-docker containerd runc | cut -f1)
+}
+
 # Sets Docker repository
 set_docker_repo() {
     # Add Docker's official GPG key
