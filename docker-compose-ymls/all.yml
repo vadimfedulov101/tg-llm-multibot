@@ -2,14 +2,14 @@ services:
   tg-handler:
     image: veotri/tg-handler:v0.5.1
     build:
-      context: .
+      context: ..
       dockerfile: tg-handler/Dockerfile
     environment:
       API_KEYS_FILE: /run/secrets/api_keys
       LLM_MODEL: ${LLM_MODEL}
     volumes:
-      - ./confs:/app/confs:ro
-      - ./history:/app/history 
+      - ../confs:/app/confs:ro
+      - ../history:/app/history 
     networks:
       - ollama-network
     secrets:
@@ -22,12 +22,12 @@ services:
     image: ollama/ollama:latest
     container_name: ollama
     volumes:
-      - ollama-data:/root/.ollama
+      - ../ollama-data:/root/.ollama
     networks:
       - ollama-network
     ports:
       - "11435:11434"
-    restart: unless-stopped
+    restart: always
     deploy:
       resources:
         reservations:
@@ -98,4 +98,4 @@ networks:
 
 secrets:
   api_keys:
-    file: api_keys.txt
+    file: ../api_keys.txt

@@ -1,0 +1,10 @@
+[Container]
+EnvironmentFile=/etc/tg-llm-multibot/.env
+Environment=API_KEYS_FILE=/run/secrets/api_keys LLM_MODEL=${LLM_MODEL} LLM_API_URL=${LLM_API_URL}
+Image=veotri/tg-handler:v0.5.1
+Secret=api_keys
+Volume=confs:/app/confs:ro:Z
+Volume=history:/app/history:Z
+
+[Service]
+Restart=always
