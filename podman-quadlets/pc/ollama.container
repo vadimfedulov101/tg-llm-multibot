@@ -1,12 +1,21 @@
 [Container]
+Annotation=run.oci.keep_original_groups=1
 PodmanArgs=--device nvidia.com/gpu=all
 EnvironmentFile=/etc/tg-llm-multibot/.env
 ContainerName=ollama
-Entrypoint=["/bin/sh","-c","# Stop script on error\nset -e\n\n# --- START SERVER ---\necho 'Starting server...'\nollama serve &\nPID=$$!\n\n# Wait until server responds\necho 'Waiting for Ollama API...'\nwhile ! ollama list > /dev/null 2>&1; do\n    sleep 1\ndone\n# --- START SERVER END ---\n\n# --- TRY PULLING 5 TIMES ---\necho \"Pulling model: ${LLM_MODEL}...\"\nn=0\nuntil [ \"$$n\" -ge 5 ]\ndo\n   echo \"Attempt $((n+1))/5 to pull model...\"\n   ollama pull ${LLM_MODEL} && break\n   n=$$(($$n+1))\n   echo \"Pull failed. Retrying in 10 seconds...\"\n   sleep 10\ndone\n\n# Check if failed\nif [ \"$$n\" -eq 5 ]; then\n   echo \"Failed to pull model after 5 attempts.\"\n   exit 1\nfi\n# --- TRY PULLING 5 TIMES END ---\n\n# --- LOAD MODEL ---\necho 'Loading model into memory...'\necho 'no think, dot' | ollama run ${LLM_MODEL} > /dev/null\n\n# Report success\necho 'Model loaded successfully!'\nwait $$PID\n# --- LOAD MODEL END ---\n"]
-Environment=OLLAMA_HOST=0.0.0.0 LLM_MODEL=${LLM_MODEL}
-Image=ollama/ollama:latest
+Entrypoint=["/bin/sh","-c","# Stop script on error\nset -e\n\n# --- LOG CONFIGURATION ---\necho \"Configuration Loaded.\"\necho \"Target Model:    $$OLLAMA_MODEL\"\necho \"KV Cache Type:   $$OLLAMA_KV_CACHE_TYPE\"\necho \"Context Window:  $$OLLAMA_NUM_CTX\"\necho \"Batch Size:      $$OLLAMA_NUM_BATCH\"\n\n# --- START SERVER ---\necho 'Starting server...'\nollama serve &\nPID=$$!\n\n# Wait until server responds\necho 'Waiting for Ollama API...'\nwhile ! ollama list > /dev/null 2>&1; do\n    sleep 1\ndone\n\n# --- TRY PULLING 5 TIMES ---\necho \"Pulling model: $$OLLAMA_MODEL...\"\nn=0\nuntil [ \"$$n\" -ge 5 ]\ndo\n   echo \"Attempt $$((n+1))/5 to pull model...\"\n   ollama pull $$OLLAMA_MODEL && break\n   n=$$((n+1))\n   echo \"Pull failed. Retrying in 10 seconds...\"\n   sleep 10\ndone\n# Check if failed\nif [ \"$$n\" -eq 5 ]; then\n   echo \"Failed to pull model after 5 attempts.\"\n   exit 1\nfi\n\n# --- LOAD MODEL ---\necho 'Loading model into memory...'\necho 'no think, dot' | ollama run $$OLLAMA_MODEL > /dev/null\n\n# Report success\necho 'Model loaded successfully!'\nwait $$PID\n"]
+Environment=OLLAMA_HOST=0.0.0.0 OLLAMA_KEEP_ALIVE=-1 OLLAMA_MODEL OLLAMA_KV_CACHE_TYPE OLLAMA_NUM_CTX OLLAMA_NUM_BATCH
+HealthCmd=ollama ps | grep -q $$OLLAMA_MODEL
+HealthInterval=10s
+HealthRetries=1000
+HealthStartPeriod=5m
+HealthTimeout=10s
+Image=docker.io/ollama/ollama
 PublishPort=11434:11434
-Volume=../ollama-data:/root/.ollama:Z
+Volume=%h/.local/share/ollama-data:/root/.ollama:Z
 
 [Service]
 Restart=always
+
+[Service]
+TimeoutStartSec=0

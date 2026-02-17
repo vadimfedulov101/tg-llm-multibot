@@ -1,12 +1,12 @@
 services:
   tg-handler:
-    image: veotri/tg-handler:v0.5.1
+    image: docker.io/veotri/tg-handler:v0.5.1
     build:
       context: ..
       dockerfile: tg-handler/Dockerfile
     environment:
-      API_KEYS_FILE: /run/secrets/api_keys
-      LLM_MODEL: ${LLM_MODEL}
+      - API_KEYS_FILE=/run/secrets/api_keys
+      - OLLAMA_MODEL
     volumes:
       - ../confs:/app/confs:ro
       - ../history:/app/history 
@@ -19,8 +19,13 @@ services:
         condition: service_healthy
 
   ollama:
-    image: ollama/ollama:latest
+    image: docker.io/ollama/ollama
     container_name: ollama
+    environment:
+      - OLLAMA_HOST=0.0.0.0
+      - OLLAMA_MODEL
+      - OLLAMA_NUM_CTX
+      - OLLAMA_FLASH_ATTENTION
     volumes:
       - ../ollama-data:/root/.ollama
     networks:
@@ -55,13 +60,13 @@ services:
         # --- START SERVER END ---
 
         # --- TRY PULLING 5 TIMES ---
-        echo "Pulling model: ${LLM_MODEL}..."
+        echo "Pulling model: $$LLM_MODEL..."
         n=0
         until [ "$$n" -ge 5 ]
         do
-           echo "Attempt $((n+1))/5 to pull model..."
-           ollama pull ${LLM_MODEL} && break
-           n=$$(($$n+1))
+           echo "Attempt $$((n+1))/5 to pull model..."
+           ollama pull $$LLM_MODEL && break
+           n=$$((n+1))
            echo "Pull failed. Retrying in 10 seconds..."
            sleep 10
         done
@@ -75,16 +80,14 @@ services:
 
         # --- LOAD MODEL ---
         echo 'Loading model into memory...'
-        echo 'no think, dot' | ollama run ${LLM_MODEL} > /dev/null
+        echo 'no think, dot' | ollama run $$LLM_MODEL > /dev/null
         
         # Report success
         echo 'Model loaded successfully!'
         wait $$PID
         # --- LOAD MODEL END ---
     healthcheck: # Wait for 3 hours and 5 minutes
-      test:
-        - CMD-SHELL
-        - ollama ps | grep -q ${LLM_MODEL}
+      test: ["CMD-SHELL", "ollama ps | grep -q $$LLM_MODEL"]
       interval: 10s
       timeout: 10s
       retries: 1000

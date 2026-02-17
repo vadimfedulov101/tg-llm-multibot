@@ -20,8 +20,8 @@ import (
 
 // Constants
 const (
-	envModelVar  = "LLM_MODEL"
-	envApiUrlVar = "LLM_API_URL"
+	envModelVar  = "OLLAMA_MODEL"
+	envApiUrlVar = "OLLAMA_API_URL"
 	defApiUrl    = "http://ollama:11434/api/generate"
 	retryTime    = 10 * time.Second
 	waitTimeout  = 5 * time.Minute
