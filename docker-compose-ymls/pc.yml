@@ -1,19 +1,17 @@
 services:
   ollama:
     image: docker.io/ollama/ollama
-    container_name: ollama
+    restart: always
     ports:
       - "11434:11434"
     volumes:
-      - ../ollama-data:/root/.ollama
-    restart: always
+      - /etc/tg-llm-multibot/ollama-entrypoint.sh:usr/local/bin/entrypoint.sh:ro
+      - ~/.local/share/ollama-data:/root/.ollama
     environment:
       - OLLAMA_HOST=0.0.0.0
       - OLLAMA_KEEP_ALIVE=-1
       - OLLAMA_MODEL
       - OLLAMA_KV_CACHE_TYPE
-      - OLLAMA_NUM_CTX
-      - OLLAMA_NUM_BATCH
     deploy:
       resources:
         reservations:
@@ -21,61 +19,11 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        # Stop script on error
-        set -e
-
-        # --- LOG CONFIGURATION ---
-        echo "Configuration Loaded."
-        echo "Target Model:    $$OLLAMA_MODEL"
-        echo "KV Cache Type:   $$OLLAMA_KV_CACHE_TYPE"
-        echo "Context Window:  $$OLLAMA_NUM_CTX"
-        echo "Batch Size:      $$OLLAMA_NUM_BATCH"
-
-        # --- START SERVER ---
-        echo 'Starting server...'
-        ollama serve &
-        PID=$$!
-
-        # Wait until server responds
-        echo 'Waiting for Ollama API...'
-        while ! ollama list > /dev/null 2>&1; do
-            sleep 1
-        done
-
-        # --- TRY PULLING 5 TIMES ---
-        echo "Pulling model: $$OLLAMA_MODEL..."
-        n=0
-        until [ "$$n" -ge 5 ]
-        do
-           echo "Attempt $$((n+1))/5 to pull model..."
-           ollama pull $$OLLAMA_MODEL && break
-           n=$$((n+1))
-           echo "Pull failed. Retrying in 10 seconds..."
-           sleep 10
-        done
-        # Check if failed
-        if [ "$$n" -eq 5 ]; then
-           echo "Failed to pull model after 5 attempts."
-           exit 1
-        fi
-
-        # --- LOAD MODEL ---
-        echo 'Loading model into memory...'
-        echo 'no think, dot' | ollama run $$OLLAMA_MODEL > /dev/null
-        
-        # Report success
-        echo 'Model loaded successfully!'
-        wait $$PID
-    healthcheck: # Wait for 3 hours and 5 minutes
-      test: ["CMD-SHELL", "ollama ps | grep -q $$OLLAMA_MODEL"]
+    entrypoint: ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
+    healthcheck:  # 1 hour of checking
+      test: ["CMD-SHELL", "ollama ps | grep -q $OLLAMA_MODEL"]
       interval: 10s
-      timeout: 10s
-      retries: 1000
-      start_period: 300s
+      retries: 360
 
 volumes:
   ollama-data:

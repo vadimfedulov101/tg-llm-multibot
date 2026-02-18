@@ -1,6 +1,7 @@
 services:
   tg-handler:
-    image: docker.io/veotri/tg-handler:v0.5.1
+    image: docker.io/veotri/tg-handler:local
+    restart: always
     build:
       context: ..
       dockerfile: tg-handler/Dockerfile
@@ -9,12 +10,11 @@ services:
       - OLLAMA_MODEL
       - OLLAMA_API_URL
     volumes:
-      - ../confs:/app/confs:ro
-      - ../history:/app/history 
+      - /etc/tg-llm-multibot/confs:/app/confs:ro
+      - ~/.local/share/tg-data/history:/app/history 
     secrets:
       - api_keys
-    restart: always
 
 secrets:
   api_keys:
-    file: ../api_keys.txt
+    file: /etc/tg-llm-multibot/api_keys.txt
