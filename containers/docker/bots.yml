@@ -1,0 +1,20 @@
+services:
+  tg-handler:
+    image: docker.io/veotri/telellama-bots:local
+    restart: always
+    build:
+      context: ..
+      dockerfile: bots/Dockerfile
+    environment:
+      - API_KEYS_FILE=/run/secrets/api_keys
+      - OLLAMA_API_URL
+      - OLLAMA_MODEL
+    volumes:
+      - /etc/telellama/confs:/app/confs:ro
+      - ~/.local/share/bots-data/history:/app/history 
+    secrets:
+      - api_keys
+
+secrets:
+  api_keys:
+    file: /etc/telellama/api_keys.txt

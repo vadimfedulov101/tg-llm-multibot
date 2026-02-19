@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"tg-handler/carma"
 	"tg-handler/conf"
 	"tg-handler/denoising"
+	"tg-handler/karma"
 	"tg-handler/logging"
 	"tg-handler/memory"
 	"tg-handler/names"
@@ -27,7 +27,7 @@ const (
 	waitTimeout  = 5 * time.Minute
 	maxSelectTry = 5
 	maxTagsTry   = 5
-	maxCarmaTry  = 5
+	maxKarmaTry  = 5
 )
 
 // Message abstraction
@@ -122,12 +122,12 @@ func (m *Model) Reflect(ctx context.Context, user string) error {
 	// Get contact to update
 	botContact := botContacts.Get(user)
 
-	// Update carma
-	carmaUpdate, err := m.genCarmaUpdate(ctx)
+	// Update karma
+	karmaUpdate, err := m.genKarmaUpdate(ctx)
 	if errors.Is(err, ErrCtxDone) {
 		return err
 	}
-	botContact.Carma.Apply(carmaUpdate)
+	botContact.Karma.Apply(karmaUpdate)
 
 	// Update persona
 	tags, err := m.genTags(ctx)
@@ -307,46 +307,46 @@ func (m *Model) genTags(
 	return tags.Fallback(), nil
 }
 
-// Generates carma update
-func (m *Model) genCarmaUpdate(
+// Generates karma update
+func (m *Model) genKarmaUpdate(
 	ctx context.Context,
-) (carma.Update, error) {
+) (karma.Update, error) {
 	logger := m.Logger
 
 	// Get start time
 	start := time.Now()
 
 	// Form request
-	request := m.newRequest(m.Prompts.Carma)
+	request := m.newRequest(m.Prompts.Karma)
 
-	for i := range maxCarmaTry {
+	for i := range maxKarmaTry {
 		// Log start
 		iterLog := logger.With(logging.Iter(i + 1))
-		iterLog.Info("generating carma update")
+		iterLog.Info("generating karma update")
 
-		// Try to get carma update
-		carmaUpdateStr, err := sendRequestEternal(ctx, request, iterLog)
+		// Try to get karma update
+		karmaUpdateStr, err := sendRequestEternal(ctx, request, iterLog)
 		if errors.Is(err, ErrCtxDone) {
-			return carma.Fallback(), err
+			return karma.Fallback(), err
 		}
-		carmaUpdate, err := carma.NewUpdate(carmaUpdateStr)
+		karmaUpdate, err := karma.NewUpdate(karmaUpdateStr)
 
 		// Log success, return
 		if err == nil {
 			iterLog.Info(
-				"carma update generated",
-				logging.CarmaUpdate(carmaUpdate.String()),
+				"karma update generated",
+				logging.KarmaUpdate(karmaUpdate.String()),
 			)
 			iterLog.Debug(
-				"carma update generation took",
+				"karma update generation took",
 				logging.Duration(time.Since(start)),
 			)
-			return carmaUpdate, nil
+			return karmaUpdate, nil
 		}
 
 		// Log failure, continue
 		iterLog.Error(
-			"failed to generate carma update",
+			"failed to generate karma update",
 			logging.Err(
 				fmt.Errorf("%w: %v", errGenFailed, err),
 			),
@@ -354,8 +354,8 @@ func (m *Model) genCarmaUpdate(
 	}
 
 	// Fall back
-	logger.Error("using fallback value for carma update")
-	return carma.Fallback(), nil
+	logger.Error("using fallback value for karma update")
+	return karma.Fallback(), nil
 }
 
 // Forms new request using model's model and config

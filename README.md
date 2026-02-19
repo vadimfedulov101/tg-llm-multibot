@@ -1,141 +1,88 @@
-# TG-LLM-MultiBot 🚀
 
-Advanced Framework for Multi-Bot LLM Orchestration in Telegram using Go, Ollama, and Protobuf.
 
-## ✨ Key Features
-*   **Multi-Persona Management**: Run distinct characters (e.g., *Revy*, *Frieren*) with unique system prompts, memories, and writing styles concurrently.
-*   **Ollama Integration**: Self-hosted LLM inference using the `ollama` API (supports DeepSeek, Qwen, Mistral, etc.).
-*   **Intelligent Pipeline**:
-    *   **Candidate Selection**: Generates multiple responses and uses the LLM to pick the most authentic one.
-    *   **Reflection**: Auto-generates "Carma" (Karma) updates and memory tags based on user interaction.
-    *   **Cleanup**: Denoises `<think>` blocks and auto-translates outputs if configured.
-*   **Protobuf Memory**: Efficient, binary-serialized conversation history (`history.pb`) separated into shared queues (public chats) and private chains.
 
-## 🏗 Architecture
+# Telellama 🦙💬
 
-### 📊 Component Flow
+**Telellama** is a resilient, memory-aware, multi-bot Telegram framework powered by local LLMs (Ollama). 
+
+It is specifically designed for a **split-architecture** deployment: running lightweight, always-on bots on a low-power device (like a Raspberry Pi / DietPi) while offloading the heavy AI inference to a high-power PC. 
+
+## 🏗️ Architecture
+
+The core philosophy of Telellama is **Resilient Asynchronous Inference**. The bot stays online 24/7 on your DietPi, receiving and persisting messages into a local Protobuf history. When the bot needs to reply, it attempts to contact your PC's Ollama instance. If your PC is turned off, the bot will gracefully queue the generation request, eternally retrying until the PC is booted up and the LLM becomes available.
 
 ```mermaid
-graph TD
-    User[Telegram User] <-->|Messages| TG[TG Handler<br>Go Container]
-    
-    subgraph Edge_or_Server [Docker: TG Handler]
-        TG -->|Load/Save| Proto[history.pb<br>Protobuf]
-        TG -->|Read Config| Json[JSON Configs]
+sequenceDiagram
+    participant U as Telegram User
+    box Always-On (DietPi)
+        participant B as Telellama Bot (Go)
+        participant Q as Local Protobuf History
+    end
+    box On-Demand (Powerful PC)
+        participant O as Ollama Server
     end
 
-    subgraph GPU_Server [Docker: Ollama]
-        Ollama[Ollama API]
+    U->>B: Sends Message
+    B->>Q: Saves to Chat Queue
+    B->>B: Formats Prompt (Memory/Persona)
+    loop Eternal Retry (Every 10s)
+        B->>O: HTTP POST /api/generate
+        note right of B: If PC is OFF, bot waits<br/>without losing the message.
     end
-
-    TG -->|1. Generate Candidates| Ollama
-    TG -->|2. Select Best Candidate| Ollama
-    TG -->|3. Update Tags/Carma| Ollama
-    
-    Ollama -->|JSON Responses| TG
-    
-    %% Styling
-    style User fill:#E3F2FD,stroke:#0088CC
-    style TG fill:#E0F7FA,stroke:#00ADD8,stroke-width:2px
-    style Ollama fill:#FFF3E0,stroke:#FFB300,stroke-width:2px
-    style Proto fill:#F3E5F5,stroke:#AB47BC
-    style Json fill:#F3E5F5,stroke:#AB47BC
+    O-->>B: <think>...</think> + Final Response
+    B->>Q: Saves AI Response
+    B->>U: Sends Telegram Reply
+    B->>O: Evaluates Karma & User Tags (Memory)
 ```
+
+## ✨ Key Features
+
+*   **Split Environment:** PC (Heavy LLM) + DietPi (Always-on Go binary).
+*   **Offline Queueing:** Messages trigger generation requests that wait securely until your PC is turned on. No dropped conversations.
+*   **Docker/Podman Agnostic:** Seamlessly spin up containers regardless of your preferred engine.
+*   **Advanced AI Pipelines:** 
+    *   **Candidate Generation:** Generates multiple possible responses and evaluates them based on grammar and persona before replying.
+    *   **Memory System:** Tracks user "Karma" (`+`, `-`, `=`) and persistent behavioral "Tags" (e.g., `#stubborn`).
+    *   **Chain-of-Thought:** Automatically handles and denoises DeepSeek/Gemma `<think>` tags before sending messages to Telegram.
+
+## 🚀 Quick Start
+
+### 1. DietPi Setup (The Always-On Hub)
+The DietPi handles Telegram polling, user memory, and the message queue. 
+
+1. Ensure your bot's API keys are saved in a text file (one key per line).
+2. Run the automated DietPi configuration script from the root directory:
+   ```bash
+   ./set-dietpi.sh
+   ```
+   *This script sets up the Go environment, initializes the persistent Protobuf history volume, and prepares the services.*
+
+### 2. Container Setup (Docker / Podman Agnostic)
+To spin up the bot containers, we provide a unified script that automatically detects and uses your active container engine (Docker or Podman) without requiring configuration changes.
+
+Run this from the project root:
+```bash
+./set-containers.sh
+```
+
+### 3. PC Setup (The Heavy Lifter)
+On your powerful PC, ensure(https://ollama.com/) is installed and accessible over your local network.
+
+Configure your `ollama.env` file to point to your PC's static IP (e.g., `192.168.1.101`):
+```env
+OLLAMA_MODEL=hf.co/mradermacher/Gemma3-27B-it-vl-GLM-4.7...
+OLLAMA_API_URL=http://192.168.1.101:11434/api/generate
+```
+*Note: Ensure your PC's firewall allows incoming connections on port `11434`.*
 
 ## ⚙️ Configuration
 
-### 1. Secrets & Environment
-*   **Secrets**: Create `api_keys.txt` in the root directory. Add your Telegram Bot Tokens (one per line).
-*   **Environment**: Create a `.env` file based on your deployment scenario.
-    ```bash
-    LLM_MODEL='richardyoung/qwen3-14b-abliterated:q8_0'
-    # Use 'http://ollama:11434...' for Scenario A
-    # Use 'http://192.168.1.101:11434...' for Scenario B
-    LLM_API_URL='http://ollama:11434/api/generate' 
-    ```
+Configurations are dynamically loaded via JSON files without needing to recompile:
 
-### 2. Global Settings (`confs/init.json`)
-Controls paths, memory retention, and allowed chats.
-```json
-{
-    "cleaner_settings": {
-        "msg_ttl": "186h",       // Messages older than this are deleted
-        "cleanup_interval": "12h"
-    },
-    "bot_settings": {
-        "allowed_chats": {
-            "usernames": ["admin_user"], // Admins for private chats
-            "ids": [-100123456789]       // Allowed Public Group IDs
-        }
-    }
-}
-```
+*   **Global Settings (`./confs/init.json`):**
+    Defines allowed chat IDs, prompt templates, memory limits, message time-to-live (TTL), and default LLM parameters (Temperature, Top K, etc.).
+*   **Bot-Specific Settings (`./confs/bots/<botname>.json`):**
+    Defines the system prompt/persona (e.g., Flagria the Esperanto speaker) and the number of response candidates to generate before picking the best one.
 
-### 3. Bot Personas (`confs/bots/*.json`)
-File name must match the Telegram Bot Username (e.g., `revy2_bot.json`).
-```json
-{
-    "bot_conf": {
-        "role": "System prompt describing the character...",
-        "candidate_num": 3 // 1 = Speed (No selection), 3-5 = Quality (Selection logic)
-    }
-}
-```
-
----
-
-## 🚀 Setup & Scripts
-
-Choose the scenario that fits your hardware availability.
-
-### Scenario A: Single PC (Common)
-Runs both the Bot Handler and the LLM on one machine (Linux/Windows with Docker).
-
-1.  **Install Docker**: Ensure Docker Desktop (Windows) or Docker Engine (Linux) is installed.
-2.  **GPU Support**: If on Linux, run `sudo ./scripts/set-nvidia.sh` to install the Nvidia Container Toolkit.
-3.  **Run**:
-    ```bash
-    docker compose up -d
-    ```
-
----
-
-### Scenario B: Distributed (Optimized)
-Splits the workload: A powerful PC/Server runs the LLM, and a low-power device (DietPi/RPi) runs the Telegram Bot.
-
-#### Part 1: The PC (LLM Server)
-
-**If using Linux:**
-1.  Run `sudo ./scripts/set-nvidia.sh`.
-2.  Run `docker compose -f docker-compose.pc.yml up -d`.
-
-**If using Windows (WSL2):**
-You must forward the WSL port to the host so the DietPi can reach it.
-1.  Open **Task Scheduler** (`taskschd.msc`).
-2.  Click **Create Task**.
-    *   **General**: Name: `WSL Port Forward`. Check **"Run with highest privileges"** and **"Run whether user is logged on or not"**.
-    *   **Triggers**: New -> **At system startup**.
-    *   **Actions**: New -> **Start a program**.
-        *   Program: `powershell.exe`
-        *   Arguments: `-ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\Path\To\Repo\scripts\set-wsl-ports.ps1"`
-3.  Save and Restart.
-4.  Run `docker compose -f docker-compose.pc.yml up -d`.
-
-#### Part 2: The DietPi (Bot Handler)
-
-1.  **Get the OS**: Download the image for your device from [DietPi.com](https://dietpi.com/#download).
-2.  **Flash**: Use [Rufus](https://rufus.ie/en/) to burn the image to an SD card.
-3.  **Configure Network Script**:
-    *   Open `scripts/set-dietpi.sh` on your PC.
-    *   Edit the `GATEWAY`, `IP`, `SSID`, and `KEY` variables with your network credentials.
-    *   Copy the modified `set-dietpi.sh` to the root of the SD card (the visible partition).
-4.  **Boot**: Insert SD card into the device and power on.
-5.  **Execute**:
-    *   Connect to the device (SSH or Keyboard).
-    *   Mount the boot partition (if necessary) or find the script.
-    *   Run: `sudo ./set-dietpi.sh`.
-6.  **Install Docker**:
-    *   Run: `sudo ./scripts/set-docker.sh`.
-7.  **Start Bot**:
-    *   Ensure `.env` has `LLM_API_URL` pointing to your PC's IP.
-    *   Run: `docker compose -f docker-compose.pi.yml up -d`.
+## 🧹 Maintenance
+The framework includes an automated memory cleaner (`history.Cleaner`) that respects the TTL settings defined in `init.json`. It routinely purges expired message chains from RAM and the disk-backed `.pb` files to ensure your DietPi never runs out of memory.

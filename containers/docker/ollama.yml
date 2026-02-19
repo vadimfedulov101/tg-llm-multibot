@@ -5,13 +5,13 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /etc/tg-llm-multibot/ollama-entrypoint.sh:usr/local/bin/entrypoint.sh:ro
+      - /etc/telellama/ollama-entrypoint.sh:usr/local/bin/entrypoint.sh:ro
       - ~/.local/share/ollama-data:/root/.ollama
     environment:
-      - OLLAMA_HOST=0.0.0.0
-      - OLLAMA_KEEP_ALIVE=-1
+      - OLLAMA_HOST
       - OLLAMA_MODEL
       - OLLAMA_KV_CACHE_TYPE
+      - OLLAMA_KEEP_ALIVE
     deploy:
       resources:
         reservations:
@@ -20,7 +20,7 @@ services:
               count: all
               capabilities: [gpu]
     entrypoint: ["/bin/sh", "/usr/local/bin/entrypoint.sh"]
-    healthcheck:  # 1 hour of checking
+    healthcheck:
       test: ["CMD-SHELL", "ollama ps | grep -q $OLLAMA_MODEL"]
       interval: 10s
       retries: 360

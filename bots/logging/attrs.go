@@ -105,8 +105,8 @@ func Tags(s string) slog.Attr {
 	return slog.String("tags", s)
 }
 
-func CarmaUpdate(s string) slog.Attr {
-	return slog.String("carma_update", s)
+func KarmaUpdate(s string) slog.Attr {
+	return slog.String("karma_update", s)
 }
 
 // --- OLLAMA ---

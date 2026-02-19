@@ -1,4 +1,4 @@
-package carma
+package karma
 
 import (
 	"errors"
@@ -10,29 +10,29 @@ const (
 	Max = 100
 )
 
-// Carma errors
+// Karma errors
 var (
-	errCarmaOOB      = errors.New("carma out of bounds")
-	errCarmaBelowMin = fmt.Errorf("below minimum value of %d", Min)
-	errCarmaOverMax  = fmt.Errorf("over maximum value of %d", Max)
+	errKarmaOOB      = errors.New("karma out of bounds")
+	errKarmaBelowMin = fmt.Errorf("below minimum value of %d", Min)
+	errKarmaOverMax  = fmt.Errorf("over maximum value of %d", Max)
 
-	errCarmaUpdateOOV = errors.New("carma update out of variants")
+	errKarmaUpdateOOV = errors.New("karma update out of variants")
 )
 
-type Carma int
+type Karma int
 
-func New(n int) (*Carma, error) {
-	var err = errCarmaOOB
+func New(n int) (*Karma, error) {
+	var err = errKarmaOOB
 
 	// Abide bounds
 	if n < Min {
-		return nil, fmt.Errorf("%w: %v", err, errCarmaBelowMin)
+		return nil, fmt.Errorf("%w: %v", err, errKarmaBelowMin)
 	}
 	if n > Max {
-		return nil, fmt.Errorf("%w: %v", err, errCarmaOverMax)
+		return nil, fmt.Errorf("%w: %v", err, errKarmaOverMax)
 	}
 
-	c := Carma(n)
+	c := Karma(n)
 	return &c, nil
 }
 
@@ -66,27 +66,27 @@ func NewUpdate(s string) (Update, error) {
 	case "+":
 		return UpdatePositive, nil
 	default:
-		return UpdateNeutral, errCarmaUpdateOOV
+		return UpdateNeutral, errKarmaUpdateOOV
 	}
 }
 
-// Apply carma update
-func (c *Carma) Apply(u Update) {
+// Apply karma update
+func (c *Karma) Apply(u Update) {
 	// Calculate new value
 	newVal := int(*c) + int(u)
 
 	// Abide saturation
 	if newVal < Min {
-		*c = Carma(Min)
+		*c = Karma(Min)
 		return
 	}
 	if newVal > Max {
-		*c = Carma(Max)
+		*c = Karma(Max)
 		return
 	}
 
 	// Set new value
-	*c = Carma(newVal)
+	*c = Karma(newVal)
 }
 
 // Value used in case of generation failure

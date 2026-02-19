@@ -2,7 +2,7 @@
 set -e
 
 # --- LOG CONFIGURATION ---
-echo "Configuration Loaded."
+echo "Ollama Configuration to use."
 echo "Target Model: $OLLAMA_MODEL"
 echo "KV Cache Type: $OLLAMA_KV_CACHE_TYPE"
 

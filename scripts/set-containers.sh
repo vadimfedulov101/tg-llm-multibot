@@ -2,14 +2,28 @@
 set -e
 
 # --- Configuration ---
-PROJECT_ETC="/etc/tg-llm-multibot"
-PROJECT_DATA="$HOME/.local/share"
-LLM_DIR="$PROJECT_DATA/ollama-data"
-HIST_DIR="$PROJECT_DATA/tg-data/history"
+# Auxiliary paths
+DATA_DIR="$HOME/.local/share"
+DOCKER_DIR="containers/docker"
+PODMAN_DIR="containers/podman"
+
+# Absolute paths
+PROJECT_ETC="/etc/telellama"
+LLM_DIR="$DATA_DIR/ollama-data"
+HIST_DIR="$DATA_DIR/bots-data/history"
 QUADLET_DIR="$HOME/.config/containers/systemd"
 
-# Helper for source location of quadlet files
-INPUT_QUADLETS="podman-quadlets"
+# Relative paths
+SECRET_FILE="api_keys.txt"
+ENV_FILE="ollama.env"
+CONF_DIR="confs"
+ENTRYPOINT_FILE="scripts/ollama-entrypoint.sh"
+
+# Containers
+OLLAMA_PODMAN_CONTAINER="$PODMAN_DIR/ollama.container"
+BOTS_PODMAN_CONTAINER="$PODMAN_DIR/bots.container"
+OLLAMA_DOCKER_CONTAINER="$DOCKER_DIR/ollama.yml"
+BOTS_DOCKER_CONTAINER="$DOCKER_DIR/bots.yml"
 
 STATUS_COL=35
 
@@ -141,35 +155,44 @@ elif [ "$MODE" = "docker" ]; then
     step "Checking Docker Compose" sh -c "docker compose version >/dev/null 2>&1"
 fi
 
+
 # --- 3. Common System Preparation ---
 step "Creating Dirs" sudo mkdir -p "$PROJECT_ETC" "$LLM_DIR" "$HIST_DIR"
 step "Copying Files" sh -c "
-    sudo cp api_keys.txt \"$PROJECT_ETC/\"
-    sudo cp ollama.env \"$PROJECT_ETC/\"
-    sudo cp -r confs \"$PROJECT_ETC/\"
-    sudo cp scripts/ollama-entrypoint.sh \"$PROJECT_ETC/\"
+    sudo cp \"$SECRET_FILE\" \"$PROJECT_ETC\"
+    sudo cp \"$ENV_FILE\" \"$PROJECT_ETC\"
+    sudo cp -r \"$CONF_DIR\" \"$PROJECT_ETC\"
+    sudo cp \"$ENTRYPOINT_FILE\" \"$PROJECT_ETC\"
 "
 
 # --- 4. Permission Setting ---
-set_etc_rights() {
+set_rights() {
     local dir="$1"
-    # Etc: Root-owned, but Group-readable
-    sudo chown -R root:"$USER" "$dir"
+    local user="$2"
+    local group="$3"
+
+    sudo chown -R "$user":"$group" "$dir"
+
     sudo chmod -R 640 "$dir"
     sudo find "$dir" -type d -exec chmod 750 {} +
 }
 
-set_data_rights() {
+set_etc_rights() {
     local dir="$1"
-    # Data: User-owned (rootless)
-    sudo chown -R "$USER":"$USER" "$dir"
-    chmod -R 755 "$dir"
+    set_rights "$dir" root "$USER"
 }
 
-step "Securing $PROJECT_ETC ownership" set_etc_rights "$PROJECT_ETC"
-step "Securing $LLM_DIR ownership" set_data_rights "$LLM_DIR"
-step "Securing $HIST_DIR ownership" set_data_rights "$HIST_DIR"
-step "Making entrypoint executable" sudo chmod +x "$PROJECT_ETC/ollama-entrypoint.sh"
+set_data_rights() {
+    local dir="$1"
+    set_rights "$dir" "$USER" "$USER"
+}
+
+step "Setting $PROJECT_ETC rights" set_etc_rights "$PROJECT_ETC"
+step "Setting $LLM_DIR rights" set_data_rights "$LLM_DIR"
+step "Setting $HIST_DIR rights" set_data_rights "$HIST_DIR"
+
+# Explicitly make the entrypoint executable (overriding 640 set above)
+step "Making entrypoint executable" sudo chmod +x "$ENTRYPOINT_FILE"
 
 # --- Mode-Specific Deployment ---
 if [ "$MODE" = "podman" ]; then
@@ -177,54 +200,73 @@ if [ "$MODE" = "podman" ]; then
     
     step "Creating Quadlet Dir" mkdir -p "$QUADLET_DIR"
 
-    # Deduce container to set
+    # Deduce container to deploy
     TARGET_CONTAINER=""
     if check_gpu; then
-        # GPU: Deploy Ollama (PC logic)
-        TARGET_CONTAINER="ollama.container"
-        printf "  -> ${GREEN}GPU Detected.${RESET} Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
+        # GPU: Deploy Ollama for PC
+        TARGET_CONTAINER="$OLLAMA_PODMAN_CONTAINER"
+        printf "  -> ${GREEN}GPU Detected.${RESET}"
     else
-        # No GPU: Deploy TG-Handler (Pi logic)
-        TARGET_CONTAINER="tg-handler.container"
-        printf "  -> ${YELLOW}No GPU Detected.${RESET} Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
+        # No GPU: Deploy bots for Pi
+        TARGET_CONTAINER="$BOTS_PODMAN_CONTAINER"
+        printf "  -> ${YELLOW}No GPU Detected.${RESET}"
     fi
+    printf " Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
 
-    # Check conatiner presence
-    if [ ! -f "$INPUT_QUADLETS/$TARGET_CONTAINER" ]; then
-        echo "${RED}Error: Source file '$INPUT_QUADLETS/$TARGET_CONTAINER' not found.${RESET}"
-        exit 1
-    fi
-    
     # Deploy and reload SystemD
     step "Deploying $TARGET_CONTAINER" sh -c "
-        cp \"$INPUT_QUADLETS/$TARGET_CONTAINER\" \"$QUADLET_DIR/\"
+        cp \"$TARGET_CONTAINER\" \"$QUADLET_DIR/\"
     "
     step "Reloading SystemD" systemctl --user daemon-reload
     
-    # Deduce service name from container name (remove extension)
-    SERVICE_NAME="${TARGET_CONTAINER%.*}.service"
-
+    # Deduce target service from target container
+    # 1. Get filename
+    FILENAME=$(basename "$TARGET_CONTAINER")
+    # 2. Remove extension, add .service
+    TARGET_SERVICE="${FILENAME%.*}.service"
+    
     cat << EOF
 
 ${BOLD}==================================${RESET}
 ${GREEN}PODMAN SETUP COMPLETE!${RESET}
 
-Service deployed: ${BOLD}$SERVICE_NAME${RESET}
+Service deployed: ${BOLD}$TARGET_SERVICE${RESET}
+
 Start it with:
-${YELLOW}systemctl --user enable --now $SERVICE_NAME${RESET}
+${YELLOW}systemctl --user enable --now $TARGET_SERVICE${RESET}
 EOF
 
 elif [ "$MODE" = "docker" ]; then
     printf "\n${BOLD}Deployment: Docker Compose${RESET}\n"
-    
+
+    # Deduce container to deploy
+    TARGET_CONTAINER=""
+    if check_gpu; then
+        # GPU: Deploy Ollama for PC
+        TARGET_CONTAINER="$OLLAMA_DOCKER_CONTAINER"
+        printf "  -> ${GREEN}GPU Detected.${RESET}"
+    else
+        # No GPU: Deploy bots for Pi
+        TARGET_CONTAINER="$BOTS_DOCKER_CONTAINER"
+        printf "  -> ${YELLOW}No GPU Detected.${RESET}"
+    fi
+    printf " Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
+
+    # Deduce target YML from target container
+    # 1. Get filename
+    FILENAME=$(basename "$TARGET_CONTAINER")
+    # 2. Remove extension, add .yml
+    TARGET_YML="${FILENAME%.*}.yml"
+
     cat << EOF
 
 ${BOLD}==================================${RESET}
 ${GREEN}DOCKER SETUP COMPLETE!${RESET}
 
-Start services:
-${YELLOW}docker compose up -f docker-compose-ymls/pc.yml -d${RESET}
-${YELLOW}docker compose up -f docker-compose-ymls/pi.yml -d${RESET}
+Container to deploy: ${BOLD}$TARGET_YML${RESET}
+
+Start container:
+${YELLOW}docker compose up -f $TARGET_YML -d${RESET}
 EOF
 
 fi
