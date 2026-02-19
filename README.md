@@ -29,7 +29,7 @@ sequenceDiagram
     B->>B: Formats Prompt (Memory/Persona)
     loop Eternal Retry (Every 10s)
         B->>O: HTTP POST /api/generate
-        note right of B: If PC is OFF, bot waits<br/>without losing the message.
+        note right of B: If PC is OFF, bot waits<br/>not dropping the message.
     end
     O-->>B: <think>...</think> + Final Response
     B->>Q: Saves AI Response
@@ -41,13 +41,12 @@ sequenceDiagram
 
 ### 1. DietPi Setup
 
-1. Download ISO image (compressed as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from [DietPi website](https://dietpi.com/#download) 
-2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) or similar program. Rufus natively supports the compressed format.
+1. Download ISO image (compressed as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
+2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) or similar program. Rufus supports `.xz`.
 3. Set your variables in `set-dietpi.sh` and run it on the burned SD-card.
     ```bash
    ./set-dietpi.sh
    ```
-Note: you may need to check and adjust your router's DHCP range.
 
 ### 2. PC Setup
 
@@ -72,7 +71,7 @@ sudo nmcli connection modify "enp3s0" ipv4.method manual
 sudo nmcli connection up "enp3s0"
 ```
 
-*Note: you may need to make sure your router DHCP-range excludes just set 192.168.0.101. Use `ip route show default | awk '{print $3}` to get gateway (router) IP usable as a link.*
+*Note: you may need to make sure your router DHCP-range excludes just set 192.168.0.101. Use `ip route show default | awk '{print $3}` to get your gateway (router) IP usable as a link to access the settings.*
 
 4. Configure `ollama.env` file to point to just set static IP.
 
@@ -81,8 +80,7 @@ OLLAMA_API_URL=http://192.168.1.101:11434/api/generate
 ```
 
 *Note for WSL users: Start `scripts/set-wsl-ports.ps1` on the Windows part for
-correct port mapping. Don't forget to shut down farewall or add an exception
-for :11434*
+correct port mapping. Don't forget to allow :11434 port for firewall.*
 
 ### 3. Container Setup (Docker / Podman Agnostic)
 
