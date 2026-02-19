@@ -5,8 +5,8 @@
 ## 🏗️ Architecture
 
 It uses **distributed deployment**:
-* **DietPi**: runs the bots, is always-on.
-* **PC**: performs the AI inference, is optionally-on.
+* **DietPi**: runs the bots, is **always**-on.
+* **PC**: performs the AI inference, is **optionally**-on.
 
 It implements **error-free strategy**:
 1. The bots await new messages on DietPi, writing them into a Protobuf history.
@@ -14,89 +14,99 @@ It implements **error-free strategy**:
 3. If Ollama is unreachable, the bots eternally retry the generation request.
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": { "background": "#1e1e2e", "primaryTextColor": "#cdd6f4", "lineColor": "#f38ba8"}}}%%
-flowchart LR
-    %% Distinct Styling for Components
-    classDef user fill:#cba6f7,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
-    classDef bot fill:#89b4fa,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
-    classDef db fill:#f9e2af,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
-    classDef llm fill:#a6e3a1,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
-    classDef clusterBox fill:#1e1e2e,stroke:#45475a,stroke-width:2px,color:#cdd6f4,rx:10,ry:10
-
-    User((👤 Telegram\nUser)):::user
-
-    subgraph DietPi
-        direction TB
-        Bot:::bot
-        Mem:::db
-        
-        Bot <--> |"1. Queue Msg\n4. Save State"| Mem
-    end
-
-    subgraph PC
-        direction TB
-        Ollama{"🧠 Ollama Server\n(Heavy AI Models)"}:::llm
-    end
-
-    %% External Connections
-    User --> |"Incoming Chat"| Bot
-    Bot --> |"Denoised Reply"| User
+graph TD
+    User -->|1. Incoming Message| Bot
     
-    %% Internal Framework Connections
-    Bot ===> |"2. Generation Request\n(Eternal retry if PC is OFF)"| Ollama
-    Ollama -.-> |"3. Returns: Candidates,\nKarma Shifts & Tags"| Bot
+    subgraph Node1
+        subgraph Docker1
+            direction TB
+            Bot
+            Storage
+            Reflection
+            
+            Bot -->|2. Queues Message Safely| Storage
+            Bot -->|6. Extracts Profile Tags & Karma| Reflection
+            Reflection -.->|Persists State| Storage
+        end
+    end
+    
+    subgraph Node2
+        subgraph Docker2
+            direction TB
+            API
+            Model
+            
+            API -.->|Requests Candidates| Model
+            Model -.->|Returns Raw text & think tags| API
+        end
+    end
 
-    %% Apply Subgraph Styling
-    class DietPi,PC clusterBox
+    Bot ===>|3. HTTP POST /api/generate Retries ♾️ if PC OFF| API
+    API -->|4. AI Responses & Evaluation| Bot
+    Bot -->|5. Denoised Telegram Reply| User
+
+    %% Group Styling
+    style Node1 fill:#F1F8E9,stroke:#558B2F,stroke-width:3px,stroke-dasharray: 5 5
+    style Node2 fill:#FFEBEE,stroke:#C62828,stroke-width:3px,stroke-dasharray: 5 5
+    style Docker1 fill:#E3F2FD,stroke:#1565C0,stroke-width:2px
+    style Docker2 fill:#E3F2FD,stroke:#1565C0,stroke-width:2px
+    
+    %% Node Styling
+    style User fill:#E1F5FE,stroke:#0277BD,stroke-width:2px
+    style Bot fill:#B3E5FC,stroke:#0288D1,stroke-width:2px
+    style Storage fill:#FFF9C4,stroke:#FBC02D,stroke-width:2px
+    style Reflection fill:#E1BEE7,stroke:#8E24AA,stroke-width:2px
+    style API fill:#FFE0B2,stroke:#F57C00,stroke-width:2px
+    style Model fill:#C8E6C9,stroke:#388E3C,stroke-width:2px
+
+    classDef rounded fill:#fff,stroke:#666,stroke-width:2px,rounded
+    class User,Bot,Storage,Reflection,API,Model rounded
 ```
-
-## ✨ Key Features
-
-*   **Split Architecture:** PC (Heavy LLM Inference) + DietPi (Lightweight Message Handling).
-*   **Offline Queueing:** Messages trigger generation requests that wait securely until your PC is turned on. No dropped conversations.
-*   **Docker/Podman Agnostic:** Seamlessly spin up containers regardless of your preferred engine.
-*   **Advanced AI Pipelines:** 
-    *   **Candidate Generation:** Generates N possible responses and evaluates them.
-    *   **Memory System:** Tracks user "Karma" (`+`, `-`, `=`) and persistent behavioral "Tags" (e.g., `#stubborn`).
-    *   **Chain-of-Thought:** Automatically handles and denoises LLM `<think>` tags before sending messages to Telegram.
 
 ## 🚀 Quick Start
 
-### 1. DietPi Setup (The Always-On Hub)
-The DietPi handles Telegram polling, user memory, and the message queue. 
+### 1. DietPi Setup
 
-1. Ensure your bot's API keys are saved in a text file (one key per line).
-2. Run the automated DietPi configuration script from the root directory:
-   ```bash
+1. Download ISO image (compressed as `.xz`) for your Pi (e.g. Orange Pi Zero 2W) from [DietPi website](https://dietpi.com/#download) 
+2. Burn the image to [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) or similar program. Rufus natively supports compressed format.
+3. Set your variables in `set-dietpi.sh` and run it on the burned SD-card.
+    ```bash
    ./set-dietpi.sh
    ```
+Note: you may need to check and adjust your router's DHCP range.
 
-### 2. Container Setup (Docker / Podman Agnostic)
-To spin up the bot containers, we provide a unified script that automatically detects and uses your active container engine (Docker or Podman) without requiring configuration changes.
+### 2. PC Setup
 
-Run this from the project root:
-```bash
-./set-containers.sh
+1. Execute `wsl` in your commmand line and start `scripts/set-wsl-ports.ps1`
+2. `git clone https://github/vadimfedulov101/telellama`
+3. `cd telellama`
+
+Configure `ollama.env` file to point to your PC's static IP (e.g., `192.168.1.101`):
+
+```
+# Get your gateway (router) IP
+ip route show | grep default 
 ```
 
-### 3. PC Setup (The Heavy Lifter)
-On your powerful PC, ensure(https://ollama.com/) is installed and accessible over your local network.
-
-Configure your `ollama.env` file to point to your PC's static IP (e.g., `192.168.1.101`):
 ```env
 OLLAMA_MODEL=hf.co/mradermacher/Gemma3-27B-it-vl-GLM-4.7...
 OLLAMA_API_URL=http://192.168.1.101:11434/api/generate
 ```
 *Note: Ensure your PC's firewall allows incoming connections on port `11434`.*
 
+### 3. Container Setup (Docker / Podman Agnostic)
+
+As it's **engine-agnostic**:
+* Docker Compose container is set up by `./scripts/setup-containers.sh -d`
+* Podman Quadlets container is set up by `./scripts/setup-containers.sh -p`
+
+The container to set is **auto-deduced** by GPU presence.
+
 ## ⚙️ Configuration
 
-Configurations are dynamically loaded via JSON files without needing to recompile:
+Configurations are loaded on the boot from JSON files:
 
 *   **Global Settings (`./confs/init.json`):**
     Defines allowed chat IDs, prompt templates, memory limits, message time-to-live (TTL), and default LLM parameters (Temperature, Top K, etc.).
 *   **Bot-Specific Settings (`./confs/bots/<botname>.json`):**
-    Defines the system prompt/persona (e.g., Flagria the Esperanto speaker) and the number of response candidates to generate before picking the best one.
-
-## 🧹 Maintenance
-The framework includes an automated memory cleaner (`history.Cleaner`) that respects the TTL settings defined in `init.json`. It routinely purges expired message chains from RAM and the disk-backed `.pb` files to ensure your DietPi never runs out of memory.
+    Defines the persona prompt and the number of response candidates to generate.
