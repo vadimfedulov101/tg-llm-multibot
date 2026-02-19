@@ -5,67 +5,60 @@
 ## 🏗️ Architecture
 
 It uses **distributed deployment**:
-* Low-power DietPi: runs the bots, is always-on.
-* High-power PC: performs the AI inference, is optionally-on.
+* **DietPi**: runs the bots, is always-on.
+* **PC**: performs the AI inference, is optionally-on.
 
+It implements **error-free strategy**:
 1. The bots await new messages on DietPi, writing them into a Protobuf history.
-2. When the bots needs to reply, they attempt to reach for PC's Ollama instance.
+2. When the bots needs to reply, they try to reach for the PC's Ollama instance.
 3. If Ollama is unreachable, the bots eternally retry the generation request.
 
 ```mermaid
-%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#1e1e2e', 'primaryTextColor': '#cdd6f4', 'primaryBorderColor': '#89b4fa', 'lineColor': '#f38ba8', 'actorBkg': '#1e1e2e', 'actorBorder': '#89b4fa', 'actorTextColor': '#cdd6f4', 'noteBkgColor': '#313244', 'noteTextColor': '#cdd6f4'}}}%%
-sequenceDiagram
-    autonumber
-    actor U as 👤 Telegram User
-    
-    box rgba(137, 180, 250, 0.15) 🛡️ Always-On Hub (DietPi)
-        participant B as 🤖 Telellama Bot (Go)
-        participant M as 💾 Protobuf History
-    end
-    
-    box rgba(166, 227, 161, 0.15) ⚡ On-Demand Inference (PC)
-        participant O as 🧠 Ollama Server
+%%{init: {"theme": "base", "themeVariables": { "background": "#1e1e2e", "primaryTextColor": "#cdd6f4", "lineColor": "#f38ba8"}}}%%
+flowchart LR
+    %% Distinct Styling for Components
+    classDef user fill:#cba6f7,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
+    classDef bot fill:#89b4fa,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
+    classDef db fill:#f9e2af,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
+    classDef llm fill:#a6e3a1,stroke:#181825,stroke-width:3px,color:#181825,font-weight:bold
+    classDef clusterBox fill:#1e1e2e,stroke:#45475a,stroke-width:2px,color:#cdd6f4,rx:10,ry:10
+
+    User((👤 Telegram\nUser)):::user
+
+    subgraph DietPi
+        direction TB
+        Bot:::bot
+        Mem:::db
+        
+        Bot <--> |"1. Queue Msg\n4. Save State"| Mem
     end
 
-    U->>+B: 📩 Sends Message
-    B->>M: 💾 Persist to Local Chat Queue
-    B-->>U: 💬 Emits "typing..." status
-    
-    rect rgba(249, 226, 175, 0.1)
-        Note over B,O: 🔄 Phase 1: Resilient Generation
-        loop ⏱️ Eternal Retry (10s intervals)
-            B->>+O: Request N Candidates (Prompt + Persona)
-            Note right of B: If PC is OFF, the generation request<br/>waits safely. No messages are lost.
-            O-->>-B: Returns Candidates (inc. <think> tags)
-        end
+    subgraph PC
+        direction TB
+        Ollama{"🧠 Ollama Server\n(Heavy AI Models)"}:::llm
     end
 
-    B->>B: ⚙️ Denoise & Select Best Candidate<br/>(Grammar / Persona Validation)
-    B->>M: 💾 Append AI Response to History
-    B->>-U: 📤 Sends Final Telegram Reply
+    %% External Connections
+    User --> |"Incoming Chat"| Bot
+    Bot --> |"Denoised Reply"| User
     
-    rect rgba(203, 166, 247, 0.1)
-        Note over B,O: 🧠 Phase 2: Background Reflection
-        par Karma Tracking
-            B->>+O: Evaluate Interaction Sentiment
-            O-->>-B: Apply Karma Shift (+ / - / =)
-        and Trait Extraction
-            B->>+O: Analyze User Behavior
-            O-->>-B: Generate Profile Tags (#stubborn)
-        end
-        B->>M: 🔄 Persist Updated User Profile
-    end
+    %% Internal Framework Connections
+    Bot ===> |"2. Generation Request\n(Eternal retry if PC is OFF)"| Ollama
+    Ollama -.-> |"3. Returns: Candidates,\nKarma Shifts & Tags"| Bot
+
+    %% Apply Subgraph Styling
+    class DietPi,PC clusterBox
 ```
 
 ## ✨ Key Features
 
-*   **Split Environment:** PC (Heavy LLM) + DietPi (Always-on Go binary).
+*   **Split Architecture:** PC (Heavy LLM Inference) + DietPi (Lightweight Message Handling).
 *   **Offline Queueing:** Messages trigger generation requests that wait securely until your PC is turned on. No dropped conversations.
 *   **Docker/Podman Agnostic:** Seamlessly spin up containers regardless of your preferred engine.
 *   **Advanced AI Pipelines:** 
-    *   **Candidate Generation:** Generates multiple possible responses and evaluates them based on grammar and persona before replying.
+    *   **Candidate Generation:** Generates N possible responses and evaluates them.
     *   **Memory System:** Tracks user "Karma" (`+`, `-`, `=`) and persistent behavioral "Tags" (e.g., `#stubborn`).
-    *   **Chain-of-Thought:** Automatically handles and denoises DeepSeek/Gemma `<think>` tags before sending messages to Telegram.
+    *   **Chain-of-Thought:** Automatically handles and denoises LLM `<think>` tags before sending messages to Telegram.
 
 ## 🚀 Quick Start
 
@@ -77,7 +70,6 @@ The DietPi handles Telegram polling, user memory, and the message queue.
    ```bash
    ./set-dietpi.sh
    ```
-   *This script sets up the Go environment, initializes the persistent Protobuf history volume, and prepares the services.*
 
 ### 2. Container Setup (Docker / Podman Agnostic)
 To spin up the bot containers, we provide a unified script that automatically detects and uses your active container engine (Docker or Podman) without requiring configuration changes.
