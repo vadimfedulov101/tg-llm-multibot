@@ -1,13 +1,12 @@
 #!/bin/sh
 set -e
 
-
 # --- Configuration ---
 # Directories
 PROJECT_ETC="/etc/telellama"
 DATA_DIR="$HOME/.local/share"
-LLM_DIR="$DATA_DIR/ollama-data"
-HIST_DIR="$DATA_DIR/bots-data/history"
+OLLAMA_DIR="$DATA_DIR/ollama-data"
+BOTHIST_DIR="$DATA_DIR/bots-data/history"
 QUADLET_DIR="$HOME/.config/containers/systemd"
 DOCKER_DIR="containers/docker"
 PODMAN_DIR="containers/podman"
@@ -159,7 +158,7 @@ fi
 
 
 # --- 3. Common System Preparation ---
-step "Creating Dirs" sudo mkdir -p "$PROJECT_ETC" "$LLM_DIR" "$HIST_DIR"
+step "Creating Dirs" sudo mkdir -p "$PROJECT_ETC" "$OLLAMA_DIR" "$BOTHIST_DIR"
 step "Copying Files" sh -c "
     sudo cp \"$SECRET_FILE\" \"$PROJECT_ETC\"
     sudo cp \"$ENV_FILE\" \"$PROJECT_ETC\"
@@ -190,8 +189,8 @@ set_data_rights() {
 }
 
 step "Setting $PROJECT_ETC rights" set_etc_rights "$PROJECT_ETC"
-step "Setting $LLM_DIR rights" set_data_rights "$LLM_DIR"
-step "Setting $HIST_DIR rights" set_data_rights "$HIST_DIR"
+step "Setting ollama-data rights" set_data_rights "$OLLAMA_DIR"
+step "Setting bots-data/hist rights" set_data_rights "$BOTHIST_DIR"
 
 # Explicitly make the entrypoint executable (overriding 640 set above)
 step "Making entrypoint executable" sudo chmod +x "$ENTRYPOINT_DST_FILE"
@@ -207,16 +206,15 @@ if [ "$MODE" = "podman" ]; then
     if check_gpu; then
         # GPU: Deploy Ollama for PC
         TARGET_CONTAINER="$OLLAMA_PODMAN_CONTAINER"
-        printf "  -> ${GREEN}GPU Detected.${RESET}"
+        printf "  -> ${GREEN}GPU Detected.${RESET}\n"
     else
         # No GPU: Deploy bots for Pi
         TARGET_CONTAINER="$BOTS_PODMAN_CONTAINER"
-        printf "  -> ${YELLOW}No GPU Detected.${RESET}"
+        printf "  -> ${YELLOW}No GPU Detected.${RESET}\n"
     fi
-    printf " Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
 
     # Deploy and reload SystemD
-    step "Deploying $TARGET_CONTAINER" sh -c "
+    step "Deploying $(basename $TARGET_CONTAINER)" sh -c "
         cp \"$TARGET_CONTAINER\" \"$QUADLET_DIR/\"
     "
     step "Reloading SystemD" systemctl --user daemon-reload
@@ -235,7 +233,7 @@ ${GREEN}PODMAN SETUP COMPLETE!${RESET}
 Service deployed: ${BOLD}$TARGET_SERVICE${RESET}
 
 Start it with:
-${YELLOW}systemctl --user enable --now $TARGET_SERVICE${RESET}
+${YELLOW}systemctl --user start $TARGET_SERVICE${RESET}
 EOF
 
 elif [ "$MODE" = "docker" ]; then
