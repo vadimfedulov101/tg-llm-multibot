@@ -1,23 +1,25 @@
 #!/bin/sh
 set -e
 
-# --- Configuration ---
-# Auxiliary paths
-DATA_DIR="$HOME/.local/share"
-DOCKER_DIR="containers/docker"
-PODMAN_DIR="containers/podman"
 
-# Absolute paths
+# --- Configuration ---
+# Directories
 PROJECT_ETC="/etc/telellama"
+DATA_DIR="$HOME/.local/share"
 LLM_DIR="$DATA_DIR/ollama-data"
 HIST_DIR="$DATA_DIR/bots-data/history"
 QUADLET_DIR="$HOME/.config/containers/systemd"
+DOCKER_DIR="containers/docker"
+PODMAN_DIR="containers/podman"
+SCRIPTS_DIR="scripts"
 
-# Relative paths
+# Files
+ENTRYPOINT_FILENAME="ollama-entrypoint.sh"
 SECRET_FILE="api_keys.txt"
 ENV_FILE="ollama.env"
 CONF_DIR="confs"
-ENTRYPOINT_FILE="scripts/ollama-entrypoint.sh"
+ENTRYPOINT_SRC_FILE="$SCRIPTS_DIR/$ENTRYPOINT_FILENAME"
+ENTRYPOINT_DST_FILE="$PROJECT_ETC/$ENTRYPOINT_FILENAME"
 
 # Containers
 OLLAMA_PODMAN_CONTAINER="$PODMAN_DIR/ollama.container"
@@ -162,7 +164,7 @@ step "Copying Files" sh -c "
     sudo cp \"$SECRET_FILE\" \"$PROJECT_ETC\"
     sudo cp \"$ENV_FILE\" \"$PROJECT_ETC\"
     sudo cp -r \"$CONF_DIR\" \"$PROJECT_ETC\"
-    sudo cp \"$ENTRYPOINT_FILE\" \"$PROJECT_ETC\"
+    sudo cp \"$ENTRYPOINT_SRC_FILE\" \"$ENTRYPOINT_DST_FILE\"
 "
 
 # --- 4. Permission Setting ---
@@ -192,7 +194,7 @@ step "Setting $LLM_DIR rights" set_data_rights "$LLM_DIR"
 step "Setting $HIST_DIR rights" set_data_rights "$HIST_DIR"
 
 # Explicitly make the entrypoint executable (overriding 640 set above)
-step "Making entrypoint executable" sudo chmod +x "$ENTRYPOINT_FILE"
+step "Making entrypoint executable" sudo chmod +x "$ENTRYPOINT_DST_FILE"
 
 # --- Mode-Specific Deployment ---
 if [ "$MODE" = "podman" ]; then
