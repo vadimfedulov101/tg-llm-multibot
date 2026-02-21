@@ -153,7 +153,7 @@ if [ "$MODE" = "podman" ]; then
     step "Checking Podman binary" sh -c "command -v podman >/dev/null 2>&1"
     step "Checking Podman version" sh -c \
         "podman version --format '{{.Client.Version}}' | grep -qE '^4\.[4-9]|^[5-9]\.'"
-    step "Enabling User Linger" loginctl enable-linger "$USER"
+    step "Enabling User Linger" sudo loginctl enable-linger "$USER"
 
 elif [ "$MODE" = "docker" ]; then
     step "Checking Docker binary" sh -c "command -v docker >/dev/null 2>&1"
