@@ -7,11 +7,12 @@ Image=docker.io/ollama/ollama
 
 # --- Environment ---
 # Load dynamic variables (OLLAMA_HOST, OLLAMA_MODEL, etc)
-EnvironmentFile=/etc/telellama/ollama.env
+EnvironmentFile=%h/.config/telellama/ollama.env
 
 # --- Entrypoint ---
-Volume=/etc/telellama/ollama-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,Z
-Entrypoint=/bin/sh /usr/local/bin/entrypoint.sh
+Volume=%h/.config/telellama/ollama-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,Z
+Entrypoint=/bin/sh
+Exec=/usr/local/bin/entrypoint.sh
 
 # --- Volumes ---
 Volume=%h/.local/share/ollama-data:/root/.ollama:Z

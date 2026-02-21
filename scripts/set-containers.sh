@@ -2,29 +2,33 @@
 set -e
 
 # --- Configuration ---
-# Directories
-PROJECT_ETC="/etc/telellama"
+# Directories to create
 DATA_DIR="$HOME/.local/share"
+CONF_DIR="$HOME/.config"
+
+TELELLAMA_DIR="$CONF_DIR/telellama"
 OLLAMA_DIR="$DATA_DIR/ollama-data"
 BOTHIST_DIR="$DATA_DIR/bots-data/history"
-QUADLET_DIR="$HOME/.config/containers/systemd"
-DOCKER_DIR="containers/docker"
-PODMAN_DIR="containers/podman"
-SCRIPTS_DIR="scripts"
 
-# Files
-ENTRYPOINT_FILENAME="ollama-entrypoint.sh"
+# Files/directories to copy
 SECRET_FILE="api_keys.txt"
 ENV_FILE="ollama.env"
-CONF_DIR="confs"
-ENTRYPOINT_SRC_FILE="$SCRIPTS_DIR/$ENTRYPOINT_FILENAME"
-ENTRYPOINT_DST_FILE="$PROJECT_ETC/$ENTRYPOINT_FILENAME"
+BOTCONF_DIR="confs"
+ENTRYPOINT_DIR="scripts"
+ENTRYPOINT_FILENAME="ollama-entrypoint.sh"
+ENTRYPOINT_FILE="$ENTRYPOINT_DIR/$ENTRYPOINT_FILENAME"
 
 # Containers
+DOCKER_DIR="containers/docker"
+PODMAN_DIR="containers/podman"
 OLLAMA_PODMAN_CONTAINER="$PODMAN_DIR/ollama.container"
 BOTS_PODMAN_CONTAINER="$PODMAN_DIR/bots.container"
 OLLAMA_DOCKER_CONTAINER="$DOCKER_DIR/ollama.yml"
 BOTS_DOCKER_CONTAINER="$DOCKER_DIR/bots.yml"
+
+# Directory for Podman containers
+QUADLET_DIR="$CONF_DIR/containers/systemd"
+
 
 STATUS_COL=35
 
@@ -158,42 +162,33 @@ fi
 
 
 # --- 3. Common System Preparation ---
-step "Creating Dirs" sudo mkdir -p "$PROJECT_ETC" "$OLLAMA_DIR" "$BOTHIST_DIR"
+step "Creating Dirs" mkdir -p "$TELELLAMA_DIR" "$OLLAMA_DIR" "$BOTHIST_DIR"
 step "Copying Files" sh -c "
-    sudo cp \"$SECRET_FILE\" \"$PROJECT_ETC\"
-    sudo cp \"$ENV_FILE\" \"$PROJECT_ETC\"
-    sudo cp -r \"$CONF_DIR\" \"$PROJECT_ETC\"
-    sudo cp \"$ENTRYPOINT_SRC_FILE\" \"$ENTRYPOINT_DST_FILE\"
+    cp \"$SECRET_FILE\" \"$TELELLAMA_DIR\"
+    cp \"$ENV_FILE\" \"$TELELLAMA_DIR\"
+    cp -r \"$BOTCONF_DIR\" \"$TELELLAMA_DIR\"
+    cp \"$ENTRYPOINT_FILE\" \"$TELELLAMA_DIR\"
 "
 
 # --- 4. Permission Setting ---
-set_rights() {
+set_perms() {
     local dir="$1"
-    local user="$2"
-    local group="$3"
 
-    sudo chown -R "$user":"$group" "$dir"
-
+    sudo chown -R "$USER":"$USER" "$dir"
     sudo chmod -R 640 "$dir"
     sudo find "$dir" -type d -exec chmod 750 {} +
 }
 
-set_etc_rights() {
-    local dir="$1"
-    set_rights "$dir" root "$USER"
+apply_all_perms() {
+    set_perms "$TELELLAMA_DIR"
+    set_perms "$OLLAMA_DIR"
+    set_perms "$BOTHIST_DIR"
+    # Handle the executable
+    local entrypoint_dst_file="$TELELLAMA_DIR/$ENTRYPOINT_FILENAME"
+    chmod +x "$entrypoint_dst_file"
 }
 
-set_data_rights() {
-    local dir="$1"
-    set_rights "$dir" "$USER" "$USER"
-}
-
-step "Setting $PROJECT_ETC rights" set_etc_rights "$PROJECT_ETC"
-step "Setting ollama-data rights" set_data_rights "$OLLAMA_DIR"
-step "Setting bots-data/hist rights" set_data_rights "$BOTHIST_DIR"
-
-# Explicitly make the entrypoint executable (overriding 640 set above)
-step "Making entrypoint executable" sudo chmod +x "$ENTRYPOINT_DST_FILE"
+step "Setting Dirs & Files permissions" apply_all_perms
 
 # --- Mode-Specific Deployment ---
 if [ "$MODE" = "podman" ]; then
@@ -265,8 +260,19 @@ ${GREEN}DOCKER SETUP COMPLETE!${RESET}
 
 Container to deploy: ${BOLD}$TARGET_YML${RESET}
 
-Start container:
-${YELLOW}docker compose up -f $TARGET_YML -d${RESET}
+${BOLD}IMPORTANT: Permission Setup${RESET}
+To allow Docker to correctly find your configuration in ${BLUE}\$HOME${RESET}, 
+you should run Docker without sudo.
+
+1. Add your user to the docker group (if not already done):
+   ${YELLOW}sudo usermod -aG docker \$USER${RESET}
+
+2. Apply the group change to your current session:
+   ${YELLOW}newgrp docker${RESET}
+   ${BOLD}OR${RESET} log out and log back in.
+
+3. Start the container:
+   ${YELLOW}docker compose -f containers/docker/$TARGET_YML up -d${RESET}
 EOF
 
 fi

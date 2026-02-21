@@ -10,11 +10,11 @@ services:
       - OLLAMA_API_URL
       - OLLAMA_MODEL
     volumes:
-      - /etc/telellama/confs:/app/confs:ro
-      - ~/.local/share/bots-data/history:/app/history 
+      - ${HOME}/.config/telellama/confs:/app/confs:ro,Z
+      - ${HOME}/.local/share/bots-data/history:/app/history:Z
     secrets:
       - api_keys
 
 secrets:
   api_keys:
-    file: /etc/telellama/api_keys.txt
+    file: ${HOME}/.config/telellama/api_keys.txt

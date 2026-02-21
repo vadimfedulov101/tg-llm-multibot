@@ -5,8 +5,8 @@ services:
     ports:
       - "11434:11434"
     volumes:
-      - /etc/telellama/ollama-entrypoint.sh:usr/local/bin/entrypoint.sh:ro
-      - ~/.local/share/ollama-data:/root/.ollama
+      - ${HOME}/.config/telellama/ollama-entrypoint.sh:usr/local/bin/entrypoint.sh:ro,Z
+      - ${HOME}/.local/share/ollama-data:/root/.ollama:Z
     environment:
       - OLLAMA_HOST
       - OLLAMA_MODEL

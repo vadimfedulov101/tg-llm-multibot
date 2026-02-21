@@ -8,16 +8,16 @@ Image=docker.io/veotri/telellama-bots
 
 # --- Environment ---
 # Load dynamic variables (OLLAMA_API_URL, OLLAMA_MODEL)
-EnvironmentFile=/etc/telellama/ollama.env
+EnvironmentFile=%h/.config/telellama/ollama.env
 # Set static variable to find secret
 Environment=API_KEYS_FILE=/run/secrets/api_keys
 
 # --- Secret ---
-Secret=api_keys,type=mount,source=/etc/telellama/api_keys.txt
-Volume=/etc/telellama/ollama-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,Z
+Volume=%h/.config/telellama/api_keys.txt:/run/secrets/api_keys:ro,Z
 
 # --- Volumes ---
-Volume=/etc/telellama/confs:/app/confs:ro:Z
+Volume=%h/.config/telellama/ollama-entrypoint.sh:/usr/local/bin/entrypoint.sh:ro,Z
+Volume=%h/.config/telellama/confs:/app/confs:ro,Z
 Volume=%h/.local/share/bots-data/history:/app/history:Z
 
 [Service]
