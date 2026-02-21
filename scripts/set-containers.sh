@@ -128,7 +128,7 @@ step() {
 }
 
 # --- Initialization ---
-printf "${BOLD}Initializing Setup for ${BLUE}${MODE^^}${RESET}\n"
+printf "${BOLD}Initializing Setup for ${BLUE}$(echo "$MODE" | tr '[:lower:]' '[:upper:]')${RESET}\n"
 
 # --- Sudo Check ---
 # Check if sudo token cached (-n = non-interactive)
