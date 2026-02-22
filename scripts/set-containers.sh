@@ -21,11 +21,10 @@ ENTRYPOINT_FILE="$ENTRYPOINT_DIR/$ENTRYPOINT_FILENAME"
 # Containers
 DOCKER_DIR="containers/docker"
 PODMAN_DIR="containers/podman"
-OLLAMA_PODMAN_CONTAINER="$PODMAN_DIR/ollama.container"
-BOTS_PODMAN_CONTAINER="$PODMAN_DIR/bots.container"
 OLLAMA_DOCKER_CONTAINER="$DOCKER_DIR/ollama.yml"
 BOTS_DOCKER_CONTAINER="$DOCKER_DIR/bots.yml"
-
+OLLAMA_PODMAN_CONTAINER="$PODMAN_DIR/ollama.container"
+BOTS_PODMAN_CONTAINER="$PODMAN_DIR/bots.container"
 # Directory for Podman containers
 QUADLET_DIR="$CONF_DIR/containers/systemd"
 
@@ -190,89 +189,76 @@ apply_all_perms() {
 
 step "Setting Dirs & Files permissions" apply_all_perms
 
-# --- Mode-Specific Deployment ---
-if [ "$MODE" = "podman" ]; then
+# Sets option based on GPU presence
+set_based_on_gpu() {
+    local gpu_file=$1
+    local non_gpu_file=$2
+    local selected=""
+
+    if check_gpu; then
+        printf "  -> ${GREEN}GPU Detected.${RESET}\n" >&2
+        selected="$gpu_file"
+    else 
+        printf "  -> ${YELLOW}No GPU Detected.${RESET}\n" >&2
+        selected="$non_gpu_file"
+    fi
+
+    # Print human-readable feedback via stderr
+    printf "  File to deploy: ${BOLD}$(basename "$selected")${RESET}\n" >&2
+
+    # Return via stdout
+    echo "$selected"
+}
+
+setup_docker() {
+    printf "\n${BOLD}Deployment: Docker Compose${RESET}\n"
+
+    # Get container and YML
+    TARGET_CONTAINER=$(set_based_on_gpu \
+        "$OLLAMA_DOCKER_CONTAINER" "$BOTS_DOCKER_CONTAINER")
+    TARGET_YML=$(basename "$TARGET_CONTAINER")
+
+    # Elevate user rights
+    step "Adding $USER to Docker group" sudo usermod -aG docker $USER
+
+    cat << EOF
+${BOLD}==================================${RESET}
+${GREEN}DOCKER SETUP COMPLETE!${RESET}
+
+${BOLD}Note:${RESET} Log out and back in for group changes to take effect.
+
+Start the container (without sudo):
+${YELLOW}docker compose -f containers/docker/$TARGET_YML up -d${RESET}
+EOF
+}
+
+setup_podman() {
     printf "\n${BOLD}Deployment: Podman Quadlet${RESET}\n"
     
     step "Creating Quadlet Dir" mkdir -p "$QUADLET_DIR"
 
-    # Deduce container to deploy
-    TARGET_CONTAINER=""
-    if check_gpu; then
-        # GPU: Deploy Ollama for PC
-        TARGET_CONTAINER="$OLLAMA_PODMAN_CONTAINER"
-        printf "  -> ${GREEN}GPU Detected.${RESET}\n"
-    else
-        # No GPU: Deploy bots for Pi
-        TARGET_CONTAINER="$BOTS_PODMAN_CONTAINER"
-        printf "  -> ${YELLOW}No GPU Detected.${RESET}\n"
-    fi
-
-    # Deploy and reload SystemD
-    step "Deploying $(basename $TARGET_CONTAINER)" sh -c "
-        cp \"$TARGET_CONTAINER\" \"$QUADLET_DIR/\"
-    "
-    step "Reloading SystemD" systemctl --user daemon-reload
-    
-    # Deduce target service from target container
-    # 1. Get filename
+    # Get target container and service
+    TARGET_CONTAINER=$(set_based_on_gpu \
+        "$OLLAMA_PODMAN_CONTAINER" "$BOTS_PODMAN_CONTAINER")
     FILENAME=$(basename "$TARGET_CONTAINER")
-    # 2. Remove extension, add .service
     TARGET_SERVICE="${FILENAME%.*}.service"
-    
-    cat << EOF
 
+    # Deploy container with SystemD reload
+    step "Deploying $TARGET_SERVICE" cp "$TARGET_CONTAINER" "$QUADLET_DIR"
+    step "Reloading SystemD" systemctl --user daemon-reload
+
+    cat << EOF
 ${BOLD}==================================${RESET}
 ${GREEN}PODMAN SETUP COMPLETE!${RESET}
 
-Service deployed: ${BOLD}$TARGET_SERVICE${RESET}
-
-Start it with:
+Start the service (without sudo):
 ${YELLOW}systemctl --user start $TARGET_SERVICE${RESET}
 EOF
+}
 
+# --- Mode-Specific Deployment ---
+if [ "$MODE" = "podman" ]; then
+    setup_podman
 elif [ "$MODE" = "docker" ]; then
-    printf "\n${BOLD}Deployment: Docker Compose${RESET}\n"
-
-    # Deduce container to deploy
-    TARGET_CONTAINER=""
-    if check_gpu; then
-        # GPU: Deploy Ollama for PC
-        TARGET_CONTAINER="$OLLAMA_DOCKER_CONTAINER"
-        printf "  -> ${GREEN}GPU Detected.${RESET}"
-    else
-        # No GPU: Deploy bots for Pi
-        TARGET_CONTAINER="$BOTS_DOCKER_CONTAINER"
-        printf "  -> ${YELLOW}No GPU Detected.${RESET}"
-    fi
-    printf " Deploying: ${BOLD}$TARGET_CONTAINER${RESET}\n"
-
-    # Deduce target YML from target container
-    # 1. Get filename
-    FILENAME=$(basename "$TARGET_CONTAINER")
-    # 2. Remove extension, add .yml
-    TARGET_YML="${FILENAME%.*}.yml"
-
-    cat << EOF
-
-${BOLD}==================================${RESET}
-${GREEN}DOCKER SETUP COMPLETE!${RESET}
-
-Container to deploy: ${BOLD}$TARGET_YML${RESET}
-
-${BOLD}IMPORTANT: Permission Setup${RESET}
-To allow Docker to correctly find your configuration in ${BLUE}\$HOME${RESET}, 
-you should run Docker without sudo.
-
-1. Add your user to the docker group (if not already done):
-   ${YELLOW}sudo usermod -aG docker \$USER${RESET}
-
-2. Apply the group change to your current session:
-   ${YELLOW}newgrp docker${RESET}
-   ${BOLD}OR${RESET} log out and log back in.
-
-3. Start the container:
-   ${YELLOW}docker compose -f containers/docker/$TARGET_YML up -d${RESET}
-EOF
-
+    setup_docker
 fi
