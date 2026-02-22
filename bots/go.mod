@@ -1,6 +1,6 @@
-module telellama-bots
+module telellama
 
-go 1.25.7
+go 1.26
 
 require (
 	github.com/bregydoc/gtranslate v0.0.0-20200913051839-1bd07f6c1fc5
