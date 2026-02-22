@@ -9,7 +9,7 @@ RUN apk update && apk add --no-cache protoc git
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 
 # Download Go dependencies
-COPY bots/go.mod ./bots/go.sum .
+COPY bots/go.mod bots/go.sum .
 RUN go mod download
 
 # Copy source code
@@ -34,6 +34,6 @@ WORKDIR /app
 RUN apk update --no-cache && apk add --no-cache ca-certificates
 
 # Copy the binary from builder stage
-COPY --from=builder /telellama-app /app/telellama-app .
+COPY --from=builder /build/telellama-app /app/telellama-app .
 
 ENTRYPOINT ["/app/telellama-app"]
