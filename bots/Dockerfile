@@ -34,6 +34,6 @@ WORKDIR /app
 RUN apk update --no-cache && apk add --no-cache ca-certificates
 
 # Copy the binary from builder stage
-COPY --from=builder /build/telellama-app /app/telellama-app .
+COPY --from=builder /build/telellama-app /app/telellama-app
 
 ENTRYPOINT ["/app/telellama-app"]
