@@ -240,8 +240,9 @@ setup_podman() {
     # Get target container and service
     TARGET_CONTAINER=$(set_based_on_gpu \
         "$OLLAMA_PODMAN_CONTAINER" "$BOTS_PODMAN_CONTAINER")
-    FILENAME=$(basename "$TARGET_CONTAINER")
-    TARGET_SERVICE="${FILENAME%.*}.service"
+    TARGET_BASENAME=$(basename "$TARGET_CONTAINER")
+    TARGET_BARENAME="${TARGET_FILENAME%.*}"
+    TARGET_SERVICE="$TARGET_BARENAME.service"
 
     # Deploy container with SystemD reload
     step "Deploying $TARGET_SERVICE" cp "$TARGET_CONTAINER" "$QUADLET_DIR"
@@ -250,9 +251,17 @@ setup_podman() {
     cat << EOF
 ${BOLD}==================================${RESET}
 ${GREEN}PODMAN SETUP COMPLETE!${RESET}
+EOF
 
-${BOLD}Note:${RESET} You may need to prebuild local container.
-${YELLOW}podman build -t telellama-bots:local -f bots/Dockerfile .${RESET}
+if [ "$TARGET_CONTAINER" = "$BOTS_PODMAN_CONTAINER" ]; then
+   cat << EOF
+
+Prebuild local container:
+${YELLOW}podman build -t $TARGET_BARENAME:local -f bots/Dockerfile .${RESET}
+EOF
+fi
+
+cat << EOF
 
 Start the service (without sudo):
 ${YELLOW}systemctl --user start $TARGET_SERVICE${RESET}
