@@ -234,6 +234,8 @@ EOF
 
 setup_podman() {
     printf "\n${BOLD}Deployment: Podman Quadlet${RESET}\n"
+
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
     
     step "Creating Quadlet Dir" mkdir -p "$QUADLET_DIR"
 
