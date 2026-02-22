@@ -6,6 +6,7 @@ After=ollama.service
 ContainerName=bots
 Image=telellama-bots:local
 Pull=never
+PodmanArgs=--log-opt=max-size=50mb --log-opt=max-file=5
 
 # --- Environment ---
 # Load dynamic variables (OLLAMA_API_URL, OLLAMA_MODEL)
