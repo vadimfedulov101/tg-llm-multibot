@@ -8,11 +8,11 @@ import (
 	"sync"
 	"syscall"
 
-	"tg-handler/bot"
-	"tg-handler/conf"
-	"tg-handler/history"
-	"tg-handler/logging"
-	"tg-handler/secret"
+	"telellama/bot"
+	"telellama/conf"
+	"telellama/history"
+	"telellama/logging"
+	"telellama/secret"
 )
 
 const InitConfPath = "./confs/init.json"

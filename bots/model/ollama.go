@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"tg-handler/conf"
-	"tg-handler/logging"
+	"telellama/conf"
+	"telellama/logging"
 )
 
 // Ollama errors

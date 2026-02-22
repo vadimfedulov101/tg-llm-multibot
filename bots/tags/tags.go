@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"tg-handler/logging"
+	"telellama/logging"
 )
 
 // Tags errors

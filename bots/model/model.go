@@ -7,15 +7,15 @@ import (
 	"os"
 	"time"
 
-	"tg-handler/conf"
-	"tg-handler/denoising"
-	"tg-handler/karma"
-	"tg-handler/logging"
-	"tg-handler/memory"
-	"tg-handler/names"
-	"tg-handler/prompts"
-	"tg-handler/selectIdx"
-	"tg-handler/tags"
+	"telellama/conf"
+	"telellama/denoising"
+	"telellama/karma"
+	"telellama/logging"
+	"telellama/memory"
+	"telellama/names"
+	"telellama/prompts"
+	"telellama/selectIdx"
+	"telellama/tags"
 )
 
 // Constants

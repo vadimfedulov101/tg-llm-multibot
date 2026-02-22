@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"tg-handler/logging"
+	"telellama/logging"
 )
 
 const (

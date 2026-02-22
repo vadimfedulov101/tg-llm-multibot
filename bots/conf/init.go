@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"tg-handler/logging"
+	"telellama/logging"
 )
 
 // Placeholder numbers for templates

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"tg-handler/conf"
-	"tg-handler/history"
-	"tg-handler/logging"
+	"telellama/conf"
+	"telellama/history"
+	"telellama/logging"
 )
 
 // messaging.MessageInfo abstraction

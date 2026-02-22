@@ -3,9 +3,9 @@ package prompts
 import (
 	"fmt"
 
-	"tg-handler/conf"
-	"tg-handler/memory"
-	"tg-handler/names"
+	"telellama/conf"
+	"telellama/memory"
+	"telellama/names"
 )
 
 // Prompts from formatted templates

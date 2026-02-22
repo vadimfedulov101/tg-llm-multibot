@@ -3,9 +3,9 @@ package history
 import (
 	"time"
 
-	"tg-handler/carma"
-	"tg-handler/history/pb"
-	"tg-handler/tags"
+	"telellama/carma"
+	"telellama/history/pb"
+	"telellama/tags"
 )
 
 // --- ADAPTERS ---

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"tg-handler/logging"
+	"telellama/logging"
 
 	"golang.org/x/exp/constraints"
 )

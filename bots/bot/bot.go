@@ -10,15 +10,15 @@ import (
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"tg-handler/conf"
-	"tg-handler/history"
-	"tg-handler/logging"
-	"tg-handler/memory"
-	"tg-handler/messaging"
-	"tg-handler/model"
-	"tg-handler/names"
-	"tg-handler/prompts"
-	// "tg-handler/translator"
+	"telellama/conf"
+	"telellama/history"
+	"telellama/logging"
+	"telellama/memory"
+	"telellama/messaging"
+	"telellama/model"
+	"telellama/names"
+	"telellama/prompts"
+	// "telellama/translator"
 )
 
 // Bot errors

@@ -8,7 +8,7 @@ import (
 
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 
-	"tg-handler/logging"
+	"telellama/logging"
 )
 
 // Typing errors

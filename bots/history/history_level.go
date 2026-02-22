@@ -8,8 +8,8 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"tg-handler/history/pb"
-	"tg-handler/logging"
+	"telellama/history/pb"
+	"telellama/logging"
 )
 
 // History errors
