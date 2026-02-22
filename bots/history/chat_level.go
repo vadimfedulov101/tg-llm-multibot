@@ -3,7 +3,8 @@ package history
 import (
 	"fmt"
 	"sync"
-	"tg-handler/logging"
+
+	"telellama/logging"
 )
 
 const (

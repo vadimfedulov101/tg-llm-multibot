@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
-	"tg-handler/conf"
-	"tg-handler/logging"
+	"telellama/conf"
+	"telellama/logging"
 )
 
 // Cleaner errors

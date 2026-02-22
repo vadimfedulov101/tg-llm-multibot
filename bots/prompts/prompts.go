@@ -13,7 +13,7 @@ type Prompts struct {
 	Response string
 	Select   string
 	Tags     string
-	Carma    string
+	Karma    string
 }
 
 // Formats all prompts from templates incrementally
@@ -29,7 +29,7 @@ func New(
 		responseTemplate = templates.Response
 		selectTemplate   = templates.Select
 		tagsTemplate     = templates.Tags
-		carmaTemplate    = templates.Carma
+		karmaTemplate    = templates.Karma
 
 		// Get tags limit
 		tagsLimit = memory.Limits.Tags
@@ -45,8 +45,8 @@ func New(
 		Tags: fmtTagsPrompt(
 			tagsTemplate, memory, names, tagsLimit,
 		),
-		Carma: fmtCarmaPrompt(
-			carmaTemplate, memory, names,
+		Karma: fmtKarmaPrompt(
+			karmaTemplate, memory, names,
 		),
 	}
 }
@@ -120,8 +120,8 @@ func fmtTagsPrompt(
 
 }
 
-// Formats carma prompt incrementally
-func fmtCarmaPrompt(
+// Formats karma prompt incrementally
+func fmtKarmaPrompt(
 	template string,
 	memory *memory.Memory,
 	names *names.Names,
@@ -134,6 +134,6 @@ func fmtCarmaPrompt(
 
 	return fmt.Sprintf(template,
 		userName, botName, memory,
-		userName, contact.Carma,
+		userName, contact.Karma,
 	)
 }

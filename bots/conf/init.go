@@ -21,8 +21,8 @@ const (
 	tagsSNum = 6
 	tagsDNum = 1
 
-	carmaSNum = 5
-	carmaDNum = 0
+	karmaSNum = 5
+	karmaDNum = 0
 )
 
 // Initialization config
@@ -63,7 +63,7 @@ type PromptTemplates struct {
 	Response string `json:"response"`
 	Select   string `json:"select"`
 	Tags     string `json:"tags"`
-	Carma    string `json:"carma"`
+	Karma    string `json:"karma"`
 }
 
 // Memory limits
@@ -141,7 +141,7 @@ func mustValidateTemplates(
 	mustValidateResponseTemplate(templates.Response, logger)
 	mustValidateSelectTemplate(templates.Select, logger)
 	mustValidateTagsTemplate(templates.Tags, logger)
-	mustValidateCarmaTemplate(templates.Carma, logger)
+	mustValidateKarmaTemplate(templates.Karma, logger)
 }
 
 // Validates response template or panics
@@ -175,14 +175,14 @@ func mustValidateTagsTemplate(
 }
 
 // Validates all templates or panics
-func mustValidateCarmaTemplate(
+func mustValidateKarmaTemplate(
 	template string,
 	logger *logging.Logger,
 ) {
-	logger = logger.With(logging.TemplateType("carma"))
+	logger = logger.With(logging.TemplateType("karma"))
 
-	mustValidateNumOf(template, "%s", carmaSNum, logger)
-	mustValidateNumOf(template, "%d", carmaDNum, logger)
+	mustValidateNumOf(template, "%s", karmaSNum, logger)
+	mustValidateNumOf(template, "%d", karmaDNum, logger)
 }
 
 // Validates number of template placeholders or panic

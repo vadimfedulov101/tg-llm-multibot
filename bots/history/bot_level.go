@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"tg-handler/carma"
-	"tg-handler/tags"
+	"telellama/karma"
+	"telellama/tags"
 )
 
 // Constants
@@ -103,12 +103,12 @@ func (bcs BotContacts) String() string {
 // BOT CONTACT
 
 type BotContact struct {
-	Carma carma.Carma
+	Karma karma.Karma
 	Tags  tags.Tags
 }
 
 func (bc BotContact) String() string {
-	return fmt.Sprintf("carma: %d\ntags: %s\n", bc.Carma, bc.Tags)
+	return fmt.Sprintf("karma: %d\ntags: %s\n", bc.Karma, bc.Tags)
 }
 
 // METHODS

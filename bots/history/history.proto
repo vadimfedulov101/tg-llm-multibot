@@ -18,7 +18,7 @@ message ReplyChains {
 }
 
 message BotContact {
-    int32 carma = 1;
+    int32 karma = 1;
     string tags = 2;
 }
 
