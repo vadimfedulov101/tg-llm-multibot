@@ -21,8 +21,8 @@ const (
 	tagsSNum = 6
 	tagsDNum = 1
 
-	karmaSNum = 5
-	karmaDNum = 0
+	karmaSNum = 4
+	karmaDNum = 1
 )
 
 // Initialization config
