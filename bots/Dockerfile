@@ -13,15 +13,15 @@ RUN apk update && apk add --no-cache protoc git
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 
 # Modules
-COPY ./tg-handler/go.mod ./tg-handler/go.sum .
+COPY ./bots/go.mod ./bots/go.sum .
 RUN go mod download
 
 # Source code copy
-COPY ./tg-handler .
+COPY ./bots .
 
 # Code generation
 RUN mkdir -p history/pb
-RUN protoc --go_out=. --go_opt=module=tg-handler history/history.proto
+RUN protoc --go_out=. --go_opt=module=bots history/history.proto
 
 # Build
 RUN go build -ldflags="-s -w" main.go
