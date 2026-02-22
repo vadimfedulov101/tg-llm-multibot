@@ -1,8 +1,6 @@
 # Stage 1: BUILDER
 FROM golang:1.26.0-alpine3.23 AS builder
-
 LABEL stage=gobuilder
-
 WORKDIR /build
 
 ENV CGO_ENABLED=0
@@ -16,7 +14,7 @@ RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
 COPY ./bots/go.mod ./bots/go.sum .
 RUN go mod download
 
-# Source code copy
+# Copy source code
 COPY ./bots .
 
 # Code generation
@@ -30,14 +28,13 @@ RUN go build -ldflags="-s -w" main.go
 # RUN apk add --no-cache upx && upx --best --lzma main
 
 # Stage 2: IMAGE
-FROM alpine
+FROM alpine:3.23
+WORKDIR /app
 
 # Dependencies
 RUN apk update --no-cache && apk add --no-cache ca-certificates
 
-WORKDIR /app
-
 # Copy the binary from builder stage
-COPY --from=builder /build/main .
+COPY --from=builder /build/telellama-app .
 
-ENTRYPOINT ["./main"]
+ENTRYPOINT ["/app/telellama-app"]
