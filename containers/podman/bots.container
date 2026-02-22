@@ -4,7 +4,8 @@ After=ollama.service
 
 [Container]
 ContainerName=bots
-Image=docker.io/veotri/telellama-bots:local
+Image=telellama-bots:local
+Pull=never
 
 # --- Environment ---
 # Load dynamic variables (OLLAMA_API_URL, OLLAMA_MODEL)

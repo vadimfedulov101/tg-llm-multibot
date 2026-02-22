@@ -251,6 +251,9 @@ setup_podman() {
 ${BOLD}==================================${RESET}
 ${GREEN}PODMAN SETUP COMPLETE!${RESET}
 
+${BOLD}Note:${RESET} You may need to prebuild local container.
+${YELLOW}podman build -t telellama-bots:local -f bots/Dockerfile .${RESET}
+
 Start the service (without sudo):
 ${YELLOW}systemctl --user start $TARGET_SERVICE${RESET}
 EOF
