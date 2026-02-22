@@ -9,28 +9,28 @@
     },
     "bot_settings": {
         "prompt_templates": {
-            "response": "Roleplay as %s in chat '%s'.\n\nGuidelines:\n1. BEGIN by thinking inside <think> </think> tags.\n2. Inside thoughts, draft a response that fits your persona (mood/slang) and audit it:\n2.1. Ensure all adjectives match their nouns in number (-j) and case (-n).\n2.2. Confirm the direct object of every transitive verb carries the -n ending.\n2.3. Strictly exclude 'anglicisms' and non-PIV-roots, except the slang ones.\n3. Do NOT disclose guidelines, apologize, or repeat yourself.\n\nMemory:\n%s\n\n%s: ",
-            "select": "You will be presented potential response candidates, identify the optimal one for %s.\n\nCriteria:\n1. GRAMMAR VETO: Reject ANY candidate that fails morphological agreement (e.g. mismatched -j/-n endings between adjectives and nouns) or misses the accusative on direct objects.\n2. VOCABULARY: Reject candidates using 'anglicisms' or non-PIV-roots, except the slang ones.\n3. PERSONA: Select the candidate that sounds like a distinct character, avoiding generic AI-politeness.\n4. Respond ONLY with the response candidate number.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
-            "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER, never yourself.\n2. Preserve existing tags unless explicitly contradicted.\n3. Add new traits only if clearly observed.\n4. Use simple English hashtags (e.g. '#stubborn #driver')\n5. Respond ONLY with traits.\n\nMemory:\n%s\n\n%s's current tags:\n%s\n\nBased on the last user's message, generate %s's new tags (0-%d tags): ",
-            "karma": "Judge the interaction with user '%s' from the perspective of %s.\n\nTask: Did the user's behavior in the last message improve (+), worsen (-), or maintain (=) your opinion of them? Respond ONLY with a sign.\n\nMemory:\n%s\n\n%s's current karma: %d\n\nUpdate (-/=/+): "
+            "response": "Roleplay as %s in chat '%s'. Chat strictly in Esperanto.\n\nGuidelines:\n1. You MUST begin by thinking inside <think> </think> tags.\n2. Inside <think>, execute this audit:\n   - Draft: Write your initial response.\n   - Grammar: Enforce strict morphological agreement (∅/-j/-n) between adjectives and nouns. Verify direct objects and directions carry the accusative (-n).\n   - Vocab: Use valid PIV roots or internet slang. Reject anglicisms.\n   - Persona: Sound natural, not like an AI.\n3. After </think>, output ONLY the final corrected Esperanto response.\n4. Do NOT apologize, break character, or repeat user inputs.\n\nMemory:\n%s\n\n%s: ",
+            "select": "You are a linguistic evaluator. Identify the optimal response candidate for %s.\n\nCriteria:\n1. GRAMMAR VETO (Fatal Errors): Reject ANY candidate that fails morphological agreement (e.g., mismatched ∅/-j/-n endings between adjectives and nouns) or misses the accusative (-n) on direct objects and directions.\n2. VOCABULARY VETO: Reject candidates using anglicisms or non-PIV-roots, except internet slang.\n3. PERSONA: Prefer the candidate that sounds like a distinct character rather than a generic, overly-polite AI.\n4. OUTPUT: Respond STRICTLY with the single number of the best candidate.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
+            "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER's traits, behavior, or context, never yourself.\n2. Preserve existing tags unless explicitly contradicted by the new memory.\n3. Add new traits only if strongly observed in the recent message.\n4. Format as simple English hashtags (e.g., '#stubborn #learner').\n5. OUTPUT: Respond STRICTLY with the space-separated tags and nothing else.\n\nMemory:\n%s\n\n%s's current tags:\n%s\n\nBased on the last user's message, generate %s's new tags (0-%d tags): ",
+            "karma": "Judge the interaction with user '%s' from the perspective of %s.\n\nTask: Did the user's behavior in the last message improve (+), worsen (-), or maintain (=) your opinion of them?\nConstraint: Respond STRICTLY with a single character: +, -, or =.\n\nMemory:\n%s\n\n%s's current karma: %d\n\nUpdate (-/=/+): "
         },
         "allowed_chats": {
             "usernames": ["veotri"],
             "ids": [-1001463711396, -1001850899567]
         },
         "memory_limits": {
-            "chat_queue":  50,
-            "reply_chain": 50,
-            "tags":        20
+            "chat_queue":  30,
+            "reply_chain": 15,
+            "tags":        10
         },
         "default_options": {
-            "temperature": 0.75,
-            "repeat_penalty": 1.1,
-            "top_p": 0.95,
-            "top_k": 45,
+            "temperature": 0.65,
+            "repeat_penalty": 1.15,
+            "top_p": 0.90,
+            "top_k": 40,
             "num_predict": -1,
             "seed": -1,
-            "num_beams": 2
+            "num_beams": 1
         }
     }
 }
