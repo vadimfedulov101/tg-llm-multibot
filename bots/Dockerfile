@@ -21,7 +21,7 @@ COPY ./bots .
 
 # Code generation
 RUN mkdir -p history/pb
-RUN protoc --go_out=. --go_opt=module=bots history/history.proto
+RUN protoc --go_out=. --go_opt=module=telellama history/history.proto
 
 # Build
 RUN go build -ldflags="-s -w" main.go
