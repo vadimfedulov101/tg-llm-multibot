@@ -6,7 +6,6 @@ After=ollama.service
 ContainerName=bots
 Image=telellama-bots:local
 Pull=never
-LogDriver=journald
 
 # --- Environment ---
 # Load dynamic variables (OLLAMA_API_URL, OLLAMA_MODEL)
