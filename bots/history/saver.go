@@ -8,7 +8,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"tg-handler/logging"
+	"telellama/logging"
 )
 
 // Saver errors
