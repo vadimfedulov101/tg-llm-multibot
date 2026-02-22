@@ -241,7 +241,7 @@ setup_podman() {
     TARGET_CONTAINER=$(set_based_on_gpu \
         "$OLLAMA_PODMAN_CONTAINER" "$BOTS_PODMAN_CONTAINER")
     TARGET_BASENAME=$(basename "$TARGET_CONTAINER")
-    TARGET_BARENAME="${TARGET_FILENAME%.*}"
+    TARGET_BARENAME="${TARGET_BASENAME%.*}"
     TARGET_SERVICE="$TARGET_BARENAME.service"
 
     # Deploy container with SystemD reload
