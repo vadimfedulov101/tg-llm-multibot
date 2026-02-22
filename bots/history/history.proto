@@ -1,7 +1,7 @@
 syntax = "proto3";
 
 package history;
-option go_package = "tg-handler/history/pb"; // Full path + package
+option go_package = "telellama/history/pb"; // Full path + package
 
 
 message MessageEntry {
