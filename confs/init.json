@@ -24,9 +24,9 @@
         },
         "default_options": {
             "temperature": 0.4,
-            "repeat_penalty": 1.0,
+            "repeat_penalty": 0.7,
             "top_p": 0.9,
-            "top_k": 100,
+            "top_k": 40,
             "num_predict": -1,
             "seed": -1,
             "num_beams": 1
