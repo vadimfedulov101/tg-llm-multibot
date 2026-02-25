@@ -9,10 +9,9 @@
     },
     "bot_settings": {
         "prompt_templates": {
-            "response": "Roleplay as %s in chat '%s'. Chat strictly in Esperanto.\n\nGuidelines:\n1. You MUST begin by thinking inside <think> </think> tags.\n2. Inside <think>, execute this audit:\n   - Logic: Identify the core problem and construct a logical response.\n   - Grammar: Enforce strict morphological agreement (∅/-j/-n) between adjectives and nouns. Verify direct objects and directions carry the accusative (-n).\n   - Vocab: Use strict BRO/PIV/Fundamento roots. Reject anglicisms/neologisms/slang. Apply 'neceso kaj sufiĉo'.\n   - Persona: Sound like a distinct character, not like a generic AI.\n3. After </think>, output ONLY the final corrected Esperanto response.\n4. Do NOT apologize, break character, or repeat user inputs.\n\nMemory:\n%s\n\n%s: ",
-            "select": "You are a linguistic evaluator. Identify the optimal response candidate for %s.\n\nCriteria:\n1. GRAMMAR VETO: Reject ANY candidate failing morphological agreement (∅/-j/-n) or missing the accusative (-n) on direct objects/directions.\n2. VOCABULARY VETO: Reject candidates using anglicisms/neologisms/slang/overly complex compounds.\n3. PERSONA: Prefer the candidate that sounds like a distinct character rather than a generic AI.\n4. OUTPUT: Respond STRICTLY with the single number of the best candidate.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
-            "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER's traits, intellect, or behavior, never yourself.\n2. Preserve existing tags unless explicitly contradicted.\n3. Add new traits only if strongly observed.\n4. Format as simple English hashtags (e.g., '#curious #logical #stubborn').\n5. OUTPUT: Respond STRICTLY with the space-separated tags and nothing else.\n\nMemory:\n%s\n\n%s's current tags:\n%s\n\nBased on the last user's message, generate %s's new tags (0-%d tags): ",
-            "karma": "Judge the interaction with user '%s' from the perspective of %s.\n\nTask: Did the user's intellectual engagement or behavior in the last message improve (+), worsen (-), or maintain (=) your opinion of them?\nConstraint: Respond STRICTLY with a single character: +, -, or =.\n\nMemory:\n%s\n\n%s's current karma: %d\n\nUpdate (-/=/+): "
+            "response": "Roleplay as %s in chat '%s'. Chat strictly in Esperanto.\n\nGuidelines:\n1. You MUST begin by thinking inside <think> </think> tags.\n2. After <think>, plan a logical and authentic response as a distinct character. Enforce strict morphological agreement (∅/-j/-n) between adjectives/nouns and the accusative (-n) on direct objects/directions. Use only basic roots, reject anglicisms/unnatural compounds.\n3. After </think>, output ONLY the final corrected Esperanto response for your character.\n\nMemory:\n%s\n\n%s: ",
+            "select": "Identify the optimal response candidate as %s.\n\nCriteria:\n1. CONSISTENCY: Prefer the candidate that continues the dialog logically and authentically for a distinct character.\n2. GRAMMAR VETO: Reject ANY candidate failing morphological agreement (∅/-j/-n) between adjectives/nouns or missing the accusative (-n) on direct objects/directions.\n3. VOCABULARY VETO: Reject ANY candidate using anglicisms/unnatural compounds.\n4. OUTPUT: Respond STRICTLY with the single number of the best candidate.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
+            "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER's traits, intellect, or behavior, never yourself.\n2. Preserve existing tags unless explicitly contradicted.\n3. Add new traits only if strongly observed.\n4. Format as simple English hashtags (e.g., '#curious #logical #stubborn').\n5. OUTPUT: Respond STRICTLY with the space-separated tags and nothing else.\n\nMemory:\n%s\n\n%s's current tags:\n%s\n\nBased on the last user's message, generate %s's new tags (0-%d tags): "
         },
         "allowed_chats": {
             "usernames": ["veotri"],
@@ -24,8 +23,8 @@
             "tags":        10
         },
         "default_options": {
-            "temperature": 0.65,
-            "repeat_penalty": 1.15,
+            "temperature": 0.6,
+            "repeat_penalty": 1.1,
             "top_p": 0.90,
             "top_k": 40,
             "num_predict": -1,

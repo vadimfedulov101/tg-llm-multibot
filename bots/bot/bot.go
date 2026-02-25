@@ -18,7 +18,6 @@ import (
 	"telellama/model"
 	"telellama/names"
 	"telellama/prompts"
-	// "telellama/translator"
 )
 
 // Bot errors
@@ -241,12 +240,6 @@ func (bot *Bot) reply(
 	if err != nil {
 		return nil, err
 	}
-
-	// Translate via translator
-	// text, err = translator.Translate(text)
-	// if err != nil {
-	//	return nil, err
-	//}
 
 	// Reply as bot
 	reply := messaging.Reply(bot.API, chatInfo, text, model.Logger)

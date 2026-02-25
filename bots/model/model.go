@@ -9,7 +9,6 @@ import (
 
 	"telellama/conf"
 	"telellama/denoising"
-	"telellama/karma"
 	"telellama/logging"
 	"telellama/memory"
 	"telellama/names"
@@ -27,7 +26,6 @@ const (
 	waitTimeout  = 5 * time.Minute
 	maxSelectTry = 5
 	maxTagsTry   = 5
-	maxKarmaTry  = 5
 )
 
 // Message abstraction
@@ -122,14 +120,7 @@ func (m *Model) Reflect(ctx context.Context, user string) error {
 	// Get contact to update
 	botContact := botContacts.Get(user)
 
-	// Update karma
-	karmaUpdate, err := m.genKarmaUpdate(ctx)
-	if errors.Is(err, ErrCtxDone) {
-		return err
-	}
-	botContact.Karma.Apply(karmaUpdate)
-
-	// Update persona
+	// Update tags
 	tags, err := m.genTags(ctx)
 	if errors.Is(err, ErrCtxDone) {
 		return err
@@ -305,57 +296,6 @@ func (m *Model) genTags(
 	// Fall back
 	logger.Error("using fallback value for tags")
 	return tags.Fallback(), nil
-}
-
-// Generates karma update
-func (m *Model) genKarmaUpdate(
-	ctx context.Context,
-) (karma.Update, error) {
-	logger := m.Logger
-
-	// Get start time
-	start := time.Now()
-
-	// Form request
-	request := m.newRequest(m.Prompts.Karma)
-
-	for i := range maxKarmaTry {
-		// Log start
-		iterLog := logger.With(logging.Iter(i + 1))
-		iterLog.Info("generating karma update")
-
-		// Try to get karma update
-		karmaUpdateStr, err := sendRequestEternal(ctx, request, iterLog)
-		if errors.Is(err, ErrCtxDone) {
-			return karma.Fallback(), err
-		}
-		karmaUpdate, err := karma.NewUpdate(karmaUpdateStr)
-
-		// Log success, return
-		if err == nil {
-			iterLog.Info(
-				"karma update generated",
-				logging.KarmaUpdate(karmaUpdate.String()),
-			)
-			iterLog.Debug(
-				"karma update generation took",
-				logging.Duration(time.Since(start)),
-			)
-			return karmaUpdate, nil
-		}
-
-		// Log failure, continue
-		iterLog.Error(
-			"failed to generate karma update",
-			logging.Err(
-				fmt.Errorf("%w: %v", errGenFailed, err),
-			),
-		)
-	}
-
-	// Fall back
-	logger.Error("using fallback value for karma update")
-	return karma.Fallback(), nil
 }
 
 // Forms new request using model's model and config

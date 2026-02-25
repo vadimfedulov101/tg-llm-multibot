@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"telellama/history/pb"
-	"telellama/karma"
 	"telellama/tags"
 )
 
@@ -32,8 +31,7 @@ func (h *History) toProto() *pb.RootHistory {
 		// Contacts
 		for user, c := range botData.Contacts.Contacts {
 			pbBot.Contacts[user] = &pb.BotContact{
-				Karma: int32(c.Karma),
-				Tags:  c.Tags.Serialize(),
+				Tags: c.Tags.Serialize(),
 			}
 		}
 
@@ -81,8 +79,7 @@ func fromProto(p *pb.RootHistory, cids []int64) *History {
 		// Contacts
 		for user, pCont := range pBot.Contacts {
 			botData.Contacts.Contacts[user] = BotContact{
-				Karma: karma.Karma(pCont.Karma),
-				Tags:  tags.DeserializeTags(pCont.Tags),
+				Tags: tags.DeserializeTags(pCont.Tags),
 			}
 		}
 

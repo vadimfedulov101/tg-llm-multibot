@@ -18,8 +18,7 @@ message ReplyChains {
 }
 
 message BotContact {
-    int32 karma = 1;
-    string tags = 2;
+    string tags = 1;
 }
 
 message ChatHistory { // Only local chat queues end up here
