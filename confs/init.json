@@ -9,8 +9,8 @@
     },
     "bot_settings": {
         "prompt_templates": {
-            "response": "Roleplay as %s in chat '%s'. Chat strictly in Esperanto.\n\nGuidelines:\n1. You MUST begin by thinking inside the <think> </think> tags.\n2. Inside the tags, plan a natural, authentic and distinct response for your character. Enforce strict morphological agreement (∅/-j/-n) between adjectives/nouns and the accusative (-n) on direct objects/directions/time expressions. Use only basic roots, reject anglicisms.\n3. After </think>, output ONLY the final corrected Esperanto response.\n\nMemory:\n%s\n\n%s: ",
-            "select": "Identify the optimal response candidate as %s.\n\nCriteria:\n1. CONSISTENCY: Prefer the candidate that continues the dialog naturally, authentically and distinctly for your character.\n2. GRAMMAR VETO: Reject ANY candidate failing morphological agreement (∅/-j/-n) between adjectives/nouns or missing the accusative (-n) on direct objects/directions.\n3. VOCABULARY VETO: Reject ANY candidate using anglicisms.\n4. OUTPUT: Respond STRICTLY with the single number of the best candidate.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
+            "response": "Roleplay as %s in chat '%s'. Chat strictly in Esperanto.\n\nGuidelines:\n1. You MUST begin by thinking inside the <think> </think> tags.\n2. Inside the tags, plan a complete, natural and authentic response for your character. Enforce strict morphological agreement (∅/-j/-n) between adjectives/nouns and the accusative (-n) on direct objects/directions/time expressions. Use only basic roots, reject anglicisms.\n3. After </think>, output ONLY the final corrected Esperanto response.\n\nMemory:\n%s\n\n%s: ",
+            "select": "Identify the optimal response candidate as %s.\n\nCriteria:\n1. CONSISTENCY: Prefer the candidate that sounds like a complete, natural, authentic response for your character.\n2. GRAMMAR VETO: Reject ANY candidate failing morphological agreement (∅/-j/-n) between adjectives/nouns or missing the accusative (-n) on direct objects/directions.\n3. VOCABULARY VETO: Reject ANY candidate using anglicisms.\n4. OUTPUT: Respond STRICTLY with the single number of the best candidate.\n\nMemory:\n%s\n\nCandidates:\n%s\n\nBest Candidate (1-%d): ",
             "tags": "Maintain the memory tags for user '%s' from the perspective of %s.\n\nInstructions:\n1. Tags MUST describe the USER's traits, intellect, or behavior, never yourself.\n2. Preserve existing tags unless explicitly contradicted.\n3. Add new traits only if strongly observed.\n4. Format as simple English hashtags (e.g., '#curious #logical #stubborn').\n5. OUTPUT: Respond STRICTLY with the space-separated tags and nothing else.\n\nMemory:\n%s\n\n%s's current tags:\n%s\n\nBased on the last user's message, generate %s's new tags (0-%d tags): "
         },
         "allowed_chats": {
@@ -23,9 +23,9 @@
             "tags":        10
         },
         "default_options": {
-            "temperature": 0.5,
+            "temperature": 0.6,
             "repeat_penalty": 1.0,
-            "top_p": 0.8,
+            "top_p": 0.75,
             "top_k": 0,
             "num_predict": -1,
             "seed": -1,
