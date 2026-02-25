@@ -24,8 +24,8 @@
         },
         "default_options": {
             "temperature": 0.8,
-            "repeat_penalty": 1,
-            "min_p": 0.15,
+            "repeat_penalty": 1.05,
+            "min_p": 0.2,
             "top_p": 1,
             "top_k": 0,
             "num_predict": -1,
