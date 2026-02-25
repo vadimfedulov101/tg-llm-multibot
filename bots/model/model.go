@@ -23,9 +23,9 @@ const (
 	envApiUrlVar = "OLLAMA_API_URL"
 	defApiUrl    = "http://ollama:11434/api/generate"
 	retryTime    = 10 * time.Second
-	waitTimeout  = 5 * time.Minute
-	maxSelectTry = 5
-	maxTagsTry   = 5
+	waitTimeout  = 10 * time.Minute
+	maxSelectTry = 3
+	maxTagsTry   = 3
 )
 
 // Message abstraction
