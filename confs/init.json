@@ -23,7 +23,7 @@
             "tags":        10
         },
         "default_options": {
-            "temperature": 0.5,
+            "temperature": 0.3,
             "repeat_penalty": 1.0,
             "top_p": 0.75,
             "top_k": 0,
