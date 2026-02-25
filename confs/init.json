@@ -23,10 +23,10 @@
             "tags":        10
         },
         "default_options": {
-            "temperature": 0.3,
+            "temperature": 0.5,
             "repeat_penalty": 1.0,
-            "top_p": 0.75,
-            "top_k": 0,
+            "top_p": 0.9,
+            "top_k": 100,
             "num_predict": -1,
             "seed": -1,
             "num_beams": 1
