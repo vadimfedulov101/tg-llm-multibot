@@ -23,9 +23,9 @@
             "tags":        10
         },
         "default_options": {
-            "temperature": 0.8,
+            "temperature": 0.6,
             "repeat_penalty": 1.05,
-            "min_p": 0.2,
+            "min_p": 0.25,
             "top_p": 1,
             "top_k": 0,
             "num_predict": -1,
