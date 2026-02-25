@@ -4,6 +4,7 @@ package conf
 type OptionalSettings struct {
 	Temperature   float32 `json:"temperature,omitempty"`
 	RepeatPenalty float32 `json:"repeat_penalty,omitempty"`
+	MinP          float32 `json:"min_p,omitempty"`
 	TopP          float32 `json:"top_p,omitempty"`
 	TopK          int     `json:"top_k,omitempty"`
 	NumPredict    int     `json:"num_predict,omitempty"`

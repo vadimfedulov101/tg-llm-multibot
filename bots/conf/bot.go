@@ -89,6 +89,10 @@ func setOptions(
 		"repeat penalty set", logging.RepeatPenalty, logger,
 	)
 	setOption(
+		bot.MinP, init.MinP,
+		"min P set", logging.MinP, logger,
+	)
+	setOption(
 		bot.TopP, init.TopP,
 		"top P set", logging.TopP, logger,
 	)

@@ -127,6 +127,10 @@ func RepeatPenalty(rp float32) slog.Attr {
 	return slog.Float64("repeat_penalty", float64(rp))
 }
 
+func MinP(mp float32) slog.Attr {
+	return slog.Float64("min_p", float64(mp))
+}
+
 func TopP(tp float32) slog.Attr {
 	return slog.Float64("top_p", float64(tp))
 }
