@@ -54,7 +54,7 @@ sequenceDiagram
     ```
 5. Set up your Pi.
     ```
-    # Install the requirements
+    # Install Podman, namespace utilities (dbus/uidmap), and rootless networking (passt/slirp4netns)
     sudo apt update
     sudo apt install -y podman dbus-user-session uidmap passt slirp4netns
 
@@ -79,7 +79,10 @@ sequenceDiagram
 2. `cd telellama`
 3. Set static IP address.
     ```
-    # 1. Set the IP address
+    # 0. Identify your Network Interface Name (e.g. enp3s0, eth0, wlp2s0)
+    ip link show
+
+    # 1. Set the IP address (e.g. 192.168.0.101)
     sudo nmcli connection modify "enp3s0" ipv4.addresses "192.168.0.101/24"
 
     # 2. Set the Gateway
@@ -94,7 +97,7 @@ sequenceDiagram
     # 5. Apply
     sudo nmcli connection up "enp3s0"
     ```
-*Note: Your router DHCP-range must exclude just set IP address (e.g. 192.168.0.101). Settings are located via Gateway IP `ip route show default | awk '{print $3}` as a link.*
+*Note: Your router DHCP-range must exclude just set IP address. Settings can be viewed via Gateway IP as a link: `ip route show default | awk '{print $3}`*
 
 4. Configure `ollama.env` file to point to just set static IP.
     ```env
