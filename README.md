@@ -25,14 +25,15 @@ sequenceDiagram
     end
 
     U->>B: Sends Message
-    B->>Q: Saves to Chat Queue
-    B->>B: Formats Prompt (Memory/Persona)
+    B->>Q: Saves Message
+    B->>B: Formats Prompt
     loop Eternal Retry (Every 10s)
         B->>O: HTTP POST /api/generate
         note right of B: If PC is OFF, bot waits<br/>not dropping the message.
     end
     O-->>B: <think>...</think> + Final Response
-    B->>Q: Saves Response
+    B->>B: Filters Response
+    B->>Q: Saves Reply
     B->>U: Sends Reply
     B->>O: Evaluates User Tags
 ```
