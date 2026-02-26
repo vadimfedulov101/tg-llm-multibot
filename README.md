@@ -4,19 +4,19 @@
 
 ## 🏗️ Architecture
 
-It uses **distributed deployment**:
-* **DietPi**: runs the bots, is **always**-on.
-* **PC**: performs the AI inference, is **optionally**-on.
+**Distributed Deployment**:
+* **Pi**: always-on, runs the bots.
+* **PC**: optionally-on, performs the inference.
 
-It implements **error-free strategy**:
-1. The bots await new messages on Pi, writing them into a Protobuf history.
-2. When the bots needs to reply, they try to reach for the PC's Ollama instance.
+**Error-free Flow**:
+1. The bots (Pi) await new messages and write them as Protobuf.
+2. When triggered, they try to reach for the Ollama (PC).
 3. If Ollama is unreachable, the bots eternally retry the generation request.
 
 ```mermaid
 sequenceDiagram
     participant U as Telegram User
-    box Always-On (DietPi)
+    box Always-On (Pi)
         participant B as Telellama Bot (Go)
         participant Q as Local Protobuf History
     end
@@ -41,52 +41,80 @@ sequenceDiagram
 
 ### 1. DietPi Setup
 
-1. Download ISO image (compressed as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
-2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) or similar program. Rufus supports `.xz`.
+1. Download ISO image (as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
+2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) (`.xz` supported) or other program.
 3. Set your variables in `set-dietpi.sh` and run it on the burned SD-card.
     ```bash
    ./set-dietpi.sh
    ```
+4. Start up your Pi and SSH into it.
+    ```bash
+    ssh root:192.168.0.102
+    ```
+5. Set up your Pi.
+    ```bash
+    # Install the requirements
+    sudo apt update
+    sudo apt install -y podman dbus-user-session uidmap
+
+    # Create the user with a home directory and bash shell
+    sudo useradd -m -s /bin/bash tgbot
+    sudo adduser tgbot sudo
+
+    # Unmask logind
+    systemctl unmask systemd-logind
+
+    # Start the services
+    systemctl start systemd-logind
+    systemctl start dbus
+
+    # Enter the user correctly
+    sudo -i -u tgbot
+    ```
 
 ### 2. PC Setup
 
 1. `git clone https://github/vadimfedulov101/telellama`
 2. `cd telellama`
 3. Set static IP address.
+    ```
+    # 1. Set the IP address
+    sudo nmcli connection modify "enp3s0" ipv4.addresses "192.168.0.101/24"
 
-```
-# 1. Set the IP address
-sudo nmcli connection modify "enp3s0" ipv4.addresses "192.168.0.101/24"
+    # 2. Set the Gateway
+    sudo nmcli connection modify "enp3s0" ipv4.gateway `ip route show default | awk '{print $3}'`
 
-# 2. Set the Gateway
-sudo nmcli connection modify "enp3s0" ipv4.gateway `ip route show default | awk '{print $3}'`
+    # 3. Set DNS
+    sudo nmcli connection modify "enp3s0" ipv4.dns "8.8.8.8,1.1.1.1"
 
-# 3. Set DNS
-sudo nmcli connection modify "enp3s0" ipv4.dns "8.8.8.8,1.1.1.1"
+    # 4. Set to Manual
+    sudo nmcli connection modify "enp3s0" ipv4.method manual
 
-# 4. Set to Manual
-sudo nmcli connection modify "enp3s0" ipv4.method manual
-
-# 5. Apply
-sudo nmcli connection up "enp3s0"
-```
-
-*Note: you may need to make sure your router DHCP-range excludes just set 192.168.0.101. Use `ip route show default | awk '{print $3}` to get your gateway (router) IP usable as a link to access the settings.*
+    # 5. Apply
+    sudo nmcli connection up "enp3s0"
+    ```
+*Note: Your router DHCP-range must exclude just set IP address (e.g. 192.168.0.101). Settings are located via Gateway IP `ip route show default | awk '{print $3}` as a link.*
 
 4. Configure `ollama.env` file to point to just set static IP.
+    ```env
+    OLLAMA_API_URL=http://192.168.1.101:11434/api/generate
+    ```
 
-```env
-OLLAMA_API_URL=http://192.168.1.101:11434/api/generate
+5. Allow the Ollama port.
+Linux:
 ```
-
-*Note for WSL users: Start `scripts/set-wsl-ports.ps1` on the Windows part for
-correct port mapping. Don't forget to allow :11434 port for firewall.*
+# 1. Allow port 11434 through the firewall
+sudo firewall-cmd --add-port=11434/tcp --permanent
+# 2. Reload to apply changes
+sudo firewall-cmd --reload
+```
+WSL: `scripts/set-wsl-ports.ps1`
 
 ### 3. Container Setup (Docker / Podman Agnostic)
 
-As it's **engine-agnostic**:
-* Docker Compose container is set up by `./scripts/setup-containers.sh -d`
-* Podman Quadlets container is set up by `./scripts/setup-containers.sh -p`
+**Engine-agnostic**:
+* Docker Compose: `./scripts/setup-containers.sh -d`
+* Podman Quadlets: `./scripts/setup-containers.sh -p`
 
 The container to set is **auto-deduced** by GPU presence.
 

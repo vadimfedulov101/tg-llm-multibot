@@ -218,7 +218,7 @@ setup_docker() {
         "$OLLAMA_DOCKER_CONTAINER" "$BOTS_DOCKER_CONTAINER")
     TARGET_YML=$(basename "$TARGET_CONTAINER")
 
-    # Elevate user rights
+    # Add user to Docker group
     step "Adding $USER to Docker group" sudo usermod -aG docker $USER
 
     cat << EOF
@@ -227,7 +227,7 @@ ${GREEN}DOCKER SETUP COMPLETE!${RESET}
 
 ${BOLD}Note:${RESET} Log out and back in for group changes to take effect.
 
-Start the container (without sudo):
+Start the container (no sudo):
 ${YELLOW}docker compose -f containers/docker/$TARGET_YML up -d${RESET}
 EOF
 }
@@ -249,23 +249,14 @@ setup_podman() {
     # Deploy container with SystemD reload
     step "Deploying $TARGET_SERVICE" cp "$TARGET_CONTAINER" "$QUADLET_DIR"
     step "Reloading SystemD" systemctl --user daemon-reload
+    step "Prebuilding local container" \
+        podman build -t "$TARGET_BARENAME:local" -f bots/Dockerfile .
 
     cat << EOF
 ${BOLD}==================================${RESET}
 ${GREEN}PODMAN SETUP COMPLETE!${RESET}
-EOF
 
-if [ "$TARGET_CONTAINER" = "$BOTS_PODMAN_CONTAINER" ]; then
-   cat << EOF
-
-Prebuild local container:
-${YELLOW}podman build -t $TARGET_BARENAME:local -f bots/Dockerfile .${RESET}
-EOF
-fi
-
-cat << EOF
-
-Start the service (without sudo):
+Start the service (no sudo):
 ${YELLOW}systemctl --user start $TARGET_SERVICE${RESET}
 EOF
 }
