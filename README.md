@@ -26,11 +26,13 @@ sequenceDiagram
 
     U->>B: Sends Message
     B->>Q: Saves Message
+    B->>B: Formats Prompts
     loop Eternal Retry (Every 10s)
         B->>O: HTTP POST /api/generate
         note right of B: If PC is OFF, bot waits<br/>not dropping the message.
     end
-    O-->>B: <think>...</think> + Final Response
+    O-->>B: Raw Response
+    B->>B: Filters Response
     B->>Q: Saves Reply
     B->>U: Sends Reply
     B->>O: Evaluates User Tags
