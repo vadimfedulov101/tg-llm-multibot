@@ -26,13 +26,11 @@ sequenceDiagram
 
     U->>B: Sends Message
     B->>Q: Saves Message
-    B->>B: Formats Prompt
     loop Eternal Retry (Every 10s)
         B->>O: HTTP POST /api/generate
         note right of B: If PC is OFF, bot waits<br/>not dropping the message.
     end
     O-->>B: <think>...</think> + Final Response
-    B->>B: Filters Response
     B->>Q: Saves Reply
     B->>U: Sends Reply
     B->>O: Evaluates User Tags
@@ -104,14 +102,12 @@ sequenceDiagram
 5. Allow the Ollama port.
 
 Linux:
-
-    ```bash
+    ```
     # 1. Allow port 11434 through the firewall
     sudo firewall-cmd --add-port=11434/tcp --permanent
     # 2. Reload to apply changes
     sudo firewall-cmd --reload
     ```
-
 WSL: `scripts/set-wsl-ports.ps1`
 
 ### 3. Container Setup (Docker / Podman Agnostic)
