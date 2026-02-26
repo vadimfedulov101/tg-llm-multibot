@@ -39,7 +39,7 @@ sequenceDiagram
 
 ## 🚀 Quick Start
 
-### 1. DietPi Setup
+### 1. Pi Setup
 
 1. Download ISO image (as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
 2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) (`.xz` supported) or other program.
@@ -55,9 +55,9 @@ sequenceDiagram
     ```bash
     # Install the requirements
     sudo apt update
-    sudo apt install -y podman dbus-user-session uidmap
+    sudo apt install -y podman dbus-user-session uidmap passt slirp4netns
 
-    # Create the user with a home directory and bash shell
+    # Create the user with home and bash
     sudo useradd -m -s /bin/bash tgbot
     sudo adduser tgbot sudo
 
@@ -101,13 +101,15 @@ sequenceDiagram
     ```
 
 5. Allow the Ollama port.
+
 Linux:
-```
-# 1. Allow port 11434 through the firewall
-sudo firewall-cmd --add-port=11434/tcp --permanent
-# 2. Reload to apply changes
-sudo firewall-cmd --reload
-```
+    ```bash
+    # 1. Allow port 11434 through the firewall
+    sudo firewall-cmd --add-port=11434/tcp --permanent
+    # 2. Reload to apply changes
+    sudo firewall-cmd --reload
+    ```
+
 WSL: `scripts/set-wsl-ports.ps1`
 
 ### 3. Container Setup (Docker / Podman Agnostic)
