@@ -100,8 +100,6 @@ sequenceDiagram
     ```
 
 5. Allow the Ollama port.
-
-Linux:
     ```bash
     # 1. Allow port 11434 through the firewall
     sudo firewall-cmd --add-port=11434/tcp --permanent
