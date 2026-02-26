@@ -121,6 +121,9 @@ The container to set is **auto-deduced** by GPU presence.
 Configurations are loaded on the boot from JSON files:
 
 *   **Global Settings (`./confs/init.json`):**
+
     Defines allowed chat IDs, prompt templates, memory limits, message time-to-live (TTL), and default LLM parameters (Temperature, Top K, etc.).
+
 *   **Bot-Specific Settings (`./confs/bots/<botname>.json`):**
+
     Defines the persona prompt and the number of response candidates to generate.
