@@ -79,23 +79,19 @@ sequenceDiagram
 2. `cd telellama`
 3. Set static IP address.
     ```bash
-    # 0. Identify your Network Interface Name
-    ip link show
+    # IP address to set
+    IP="192.168.0.101"
 
-    # 1. Set the IP address
-    sudo nmcli connection modify "enp3s0" ipv4.addresses "192.168.0.101/24"
+    # Detect network vars
+    IFACE=$(ip route show default | awk '{print $5}')
+    GATEWAY=$(ip route show default | awk '{print $3}')
 
-    # 2. Set the Gateway
-    sudo nmcli connection modify "enp3s0" ipv4.gateway `ip route show default | awk '{print $3}'`
-
-    # 3. Set DNS
-    sudo nmcli connection modify "enp3s0" ipv4.dns "8.8.8.8,1.1.1.1"
-
-    # 4. Set to Manual
-    sudo nmcli connection modify "enp3s0" ipv4.method manual
-
-    # 5. Apply
-    sudo nmcli connection up "enp3s0"
+    # Apply the settings
+    sudo nmcli connection modify "$IFACE" ipv4.addresses "$IP/24"
+    sudo nmcli connection modify "$IFACE" ipv4.gateway "$GATEWAY"
+    sudo nmcli connection modify "$IFACE" ipv4.dns "8.8.8.8,1.1.1.1"
+    sudo nmcli connection modify "$IFACE" ipv4.method manual
+    sudo nmcli connection up "$IFACE"
     ```
 *Note: Your router DHCP-range must exclude just set IP address. Settings can be viewed via Gateway IP as a link: `ip route show default | awk '{print $3}`*
 
