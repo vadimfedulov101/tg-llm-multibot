@@ -45,11 +45,11 @@ sequenceDiagram
 1. Download ISO image (as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
 2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) (`.xz` supported) or other program.
 3. Set your variables in `set-dietpi.sh` and run it on the burned SD-card.
-    ```
+    ```bash
    ./set-dietpi.sh
    ```
 4. Start up your Pi and SSH into it.
-    ```
+    ```bash
     ssh root:192.168.0.102
     ```
 5. Set up your Pi.
@@ -78,11 +78,11 @@ sequenceDiagram
 1. `git clone https://github/vadimfedulov101/telellama`
 2. `cd telellama`
 3. Set static IP address.
-    ```
-    # 0. Identify your Network Interface Name (e.g. enp3s0, eth0, wlp2s0)
+    ```bash
+    # 0. Identify your Network Interface Name
     ip link show
 
-    # 1. Set the IP address (e.g. 192.168.0.101)
+    # 1. Set the IP address
     sudo nmcli connection modify "enp3s0" ipv4.addresses "192.168.0.101/24"
 
     # 2. Set the Gateway
