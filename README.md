@@ -6,7 +6,7 @@
 
 **Distributed Deployment**:
 * **Pi**: always-on, runs the bots.
-* **PC**: optionally-on, performs the inference.
+* **PC**: on-demand, performs the inference.
 
 **Error-free Flow**:
 1. The bots (Pi) await new messages and write them as Protobuf.
@@ -16,11 +16,11 @@
 ```mermaid
 sequenceDiagram
     participant U as Telegram User
-    box Always-On (Pi)
+    box Pi (Always-On)
         participant B as Telellama Bot (Go)
         participant Q as Local Protobuf History
     end
-    box On-Demand (Powerful PC)
+    box PC (On-Demand)
         participant O as Ollama Server
     end
 
@@ -34,7 +34,7 @@ sequenceDiagram
     O-->>B: <think>...</think> + Final Response
     B->>Q: Saves AI Response
     B->>U: Sends Telegram Reply
-    B->>O: Evaluates Karma & User Tags (Memory)
+    B->>O: Evaluates User Tags (Memory)
 ```
 
 ## 🚀 Quick Start
@@ -44,15 +44,15 @@ sequenceDiagram
 1. Download ISO image (as `.xz`) for your [Pi](http://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-Zero-2W.html) from the [DietPi website](https://dietpi.com/#download) 
 2. Burn the image into [SD-card](https://www.sandisk.com/en-se/products/memory-cards/microsd-cards/sandisk-ultra-lite-uhs-i-microsd?sku=SDSQUNR-032G-GN3MA) with [Rufus](https://rufus.ie/en/) (`.xz` supported) or other program.
 3. Set your variables in `set-dietpi.sh` and run it on the burned SD-card.
-    ```bash
+    ```
    ./set-dietpi.sh
    ```
 4. Start up your Pi and SSH into it.
-    ```bash
+    ```
     ssh root:192.168.0.102
     ```
 5. Set up your Pi.
-    ```bash
+    ```
     # Install the requirements
     sudo apt update
     sudo apt install -y podman dbus-user-session uidmap passt slirp4netns
@@ -103,6 +103,7 @@ sequenceDiagram
 5. Allow the Ollama port.
 
 Linux:
+
     ```bash
     # 1. Allow port 11434 through the firewall
     sudo firewall-cmd --add-port=11434/tcp --permanent
