@@ -9,7 +9,7 @@
 * **PC**: on-demand, performs the inference.
 
 **Error-free Flow**:
-1. The bots (Pi) await new messages and write them as Protobuf.
+1. The bots (Pi) await new messages.
 2. When triggered, they try to reach for the Ollama (PC).
 3. If Ollama is unreachable, the bots eternally retry the generation request.
 
@@ -17,8 +17,8 @@
 sequenceDiagram
     participant U as Telegram User
     box Pi (Always-On)
-        participant B as Telellama Bot (Go)
-        participant Q as Local Protobuf History
+        participant B as Bots
+        participant Q as Protobuf History
     end
     box PC (On-Demand)
         participant O as Ollama Server
@@ -32,9 +32,9 @@ sequenceDiagram
         note right of B: If PC is OFF, bot waits<br/>not dropping the message.
     end
     O-->>B: <think>...</think> + Final Response
-    B->>Q: Saves AI Response
-    B->>U: Sends Telegram Reply
-    B->>O: Evaluates User Tags (Memory)
+    B->>Q: Saves Response
+    B->>U: Sends Reply
+    B->>O: Evaluates User Tags
 ```
 
 ## 🚀 Quick Start
