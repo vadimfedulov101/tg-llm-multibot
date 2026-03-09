@@ -249,8 +249,10 @@ setup_podman() {
     # Deploy container with SystemD reload
     step "Deploying $TARGET_SERVICE" cp "$TARGET_CONTAINER" "$QUADLET_DIR"
     step "Reloading SystemD" systemctl --user daemon-reload
-    step "Prebuilding local container" \
-        podman build -t "$TARGET_BARENAME:local" -f bots/Dockerfile .
+    if [ "$TARGET_BARENAME" = "bots" ]; then
+        step "Prebuilding local container" \
+            podman build -t "$TARGET_BARENAME:local" -f bots/Dockerfile .
+    fi
 
     cat << EOF
 ${BOLD}==================================${RESET}
