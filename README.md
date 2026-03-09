@@ -54,13 +54,21 @@ sequenceDiagram
     ```
 5. Set up your Pi.
     ```
-    # Install Podman, namespace utilities (dbus/uidmap), and rootless networking (passt/slirp4netns)
+    # Install requirements
     sudo apt update
-    sudo apt install -y podman dbus-user-session uidmap passt slirp4netns
+    sudo apt install -y \
+        # container engine
+        podman \
+        # namespace utils
+        dbus-user-session uidmap \
+        # rootless net
+        passt slirp4netns
+        # version control & editor
+        git neovim
 
-    # Create the user with home and bash
-    sudo useradd -m -s /bin/bash tgbot
-    sudo adduser tgbot sudo
+    # Create sudo user with home and bash
+    sudo useradd -m -s /bin/bash telellama
+    sudo adduser telellama sudo
 
     # Unmask logind
     systemctl unmask systemd-logind
@@ -69,8 +77,19 @@ sequenceDiagram
     systemctl start systemd-logind
     systemctl start dbus
 
-    # Enter the user correctly
-    sudo -i -u tgbot
+    # Set passport
+    passwd telellama
+
+    # Enter the user
+    sudo -i -u telellama
+
+    # Prohibit root SSH connections (connect as telellama from now on)
+    /boot/dietpi/func/dietpi-set_software disable_ssh_password_logins root    
+
+    # Set SSH keys
+    mkdir ~/.ssh
+    dropbearkey -t ed25519 -f ~/.ssh/id_dropbear
+    cat ~/.ssh.id_dropbear.pub    
     ```
 
 ### 2. PC Setup
