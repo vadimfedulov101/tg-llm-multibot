@@ -8,7 +8,7 @@
 * **Pi**: always-on, runs the bots.
 * **PC**: on-demand, performs the inference.
 
-**Error-free Flow**:
+**Failure-resilient Flow**:
 1. The bots (Pi) await new messages.
 2. When triggered, they try to reach for the Ollama (PC).
 3. If Ollama is unreachable, the bots eternally retry the generation request.
@@ -86,10 +86,14 @@ sequenceDiagram
     # Prohibit root SSH connections (connect as telellama from now on)
     /boot/dietpi/func/dietpi-set_software disable_ssh_password_logins root    
 
-    # Set SSH keys
+    # Set DietPi SSH for Git
+    git config core.sshCommand "dbclient"
+    git config core.sshCommand "dbclient -i ~/.ssh/id_dropbear"
+
+    # Generate and show SSH keys to set in GitHub
     mkdir ~/.ssh
     dropbearkey -t ed25519 -f ~/.ssh/id_dropbear
-    cat ~/.ssh.id_dropbear.pub    
+    cat ~/.ssh.id_dropbear.pub
     ```
 
 ### 2. PC Setup
