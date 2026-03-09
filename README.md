@@ -70,6 +70,9 @@ sequenceDiagram
     sudo useradd -m -s /bin/bash telellama
     sudo adduser telellama sudo
 
+    # Prohibit root SSH connections (connect as telellama from now on)
+    /boot/dietpi/func/dietpi-set_software disable_ssh_password_logins root    
+
     # Unmask logind
     systemctl unmask systemd-logind
 
@@ -83,9 +86,6 @@ sequenceDiagram
     # Enter the user
     sudo -i -u telellama
 
-    # Prohibit root SSH connections (connect as telellama from now on)
-    /boot/dietpi/func/dietpi-set_software disable_ssh_password_logins root    
-
     # Set DietPi SSH for Git
     git config core.sshCommand "dbclient"
     git config core.sshCommand "dbclient -i ~/.ssh/id_dropbear"
@@ -94,6 +94,9 @@ sequenceDiagram
     mkdir ~/.ssh
     dropbearkey -t ed25519 -f ~/.ssh/id_dropbear
     cat ~/.ssh.id_dropbear.pub
+
+    # You may need this when entering with ssh later:
+    # export XDG_RUNTIME_DIR=/run/user/$(id -u)
     ```
 
 ### 2. PC Setup
@@ -101,6 +104,7 @@ sequenceDiagram
 1. `git clone https://github/vadimfedulov101/telellama`
 2. `cd telellama`
 3. Set static IP address.
+Linux:
     ```bash
     # IP address to set
     IP="192.168.0.101"
@@ -116,7 +120,10 @@ sequenceDiagram
     sudo nmcli connection modify "$IFACE" ipv4.method manual
     sudo nmcli connection up "$IFACE"
     ```
-*Note: Your router DHCP-range must exclude just set IP address. Settings can be viewed via Gateway IP as a link: `ip route show default | awk '{print $3}`*
+Windows:
+    Network Icon (lower-right angle) -> Settings -> Ethernet -> Edit -> Manual IPv4.
+
+*Note: Your router DHCP-range must exclude just set IP address. Visit Gateway IP as a link: `ipconfig` (Windows) / `ip route show default | awk '{print $3}` (Linux)*
 
 4. Configure `ollama.env` file to point to just set static IP.
     ```env
@@ -124,13 +131,18 @@ sequenceDiagram
     ```
 
 5. Allow the Ollama port.
+Linux:
     ```bash
     # 1. Allow port 11434 through the firewall
     sudo firewall-cmd --add-port=11434/tcp --permanent
     # 2. Reload to apply changes
     sudo firewall-cmd --reload
     ```
-WSL: `scripts/set-wsl-ports.ps1`
+Windows (PowerShel as administrator):
+    ```
+    Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope Process
+    ./scripts/set-wsl-ports.ps1
+    ```
 
 ### 3. Container Setup (Docker / Podman Agnostic)
 
