@@ -2,13 +2,14 @@
 set -e
 
 # --- Configuration ---
-# Directories to create
+# Meta directories
 DATA_DIR="$HOME/.local/share"
 CONF_DIR="$HOME/.config"
 
+# Directories to create
 TELELLAMA_DIR="$CONF_DIR/telellama"
 OLLAMA_DIR="$DATA_DIR/ollama-data"
-BOTHIST_DIR="$DATA_DIR/bots-data/history"
+BOTS_DIR="$DATA_DIR/bots-data/history"
 
 # Files/directories to copy
 SECRET_FILE="api_keys.txt"
@@ -161,7 +162,8 @@ fi
 
 
 # --- 3. Common System Preparation ---
-step "Creating Dirs" mkdir -p "$TELELLAMA_DIR" "$OLLAMA_DIR" "$BOTHIST_DIR"
+step "Deleting Old Dirs" rm -rf "$TELELLAMA_DIR" "$OLLAMA_DIR" "$BOTS_DIR"
+step "Creating New Dirs" mkdir -p "$TELELLAMA_DIR" "$OLLAMA_DIR" "$BOTS_DIR"
 step "Copying Files" sh -c "
     cp \"$SECRET_FILE\" \"$TELELLAMA_DIR\"
     cp \"$ENV_FILE\" \"$TELELLAMA_DIR\"
@@ -181,7 +183,7 @@ set_perms() {
 apply_all_perms() {
     set_perms "$TELELLAMA_DIR"
     set_perms "$OLLAMA_DIR"
-    set_perms "$BOTHIST_DIR"
+    set_perms "$BOTS_DIR"
     # Handle the executable
     local entrypoint_dst_file="$TELELLAMA_DIR/$ENTRYPOINT_FILENAME"
     chmod +x "$entrypoint_dst_file"
