@@ -10,12 +10,19 @@ if (-not $isAdmin) {
 
 Write-Host "1. Getting WSL IP address using 'hostname'..." -ForegroundColor Cyan
 
-# Split the output by whitespace and grab the first valid IPv4 address.
-$wsl_output = [string](wsl --exec hostname -I 2>$null)
-$wsl_ip = ($wsl_output -split '\s+') | Where-Object { $_ -match '^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$' } | Select-Object -First 1
+# PORTABILITY FIX: Flatten the WSL output into a single string to avoid array/newline issues.
+$wsl_output = (wsl --exec hostname -I 2>$null) -join " "
+
+# Extract the IP using \b (Word Boundaries) so invisible characters (\r, \n) don't break the match.
+$wsl_ip = $null
+if ($wsl_output -match '\b([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})\b') {
+    $wsl_ip = $matches[1]
+}
 
 if ([string]::IsNullOrWhiteSpace($wsl_ip)) {
-    Write-Host "Error: Could not find a valid WSL IPv4 address. Make sure WSL is running." -ForegroundColor Red
+    Write-Host "Error: Could not find a valid WSL IPv4 address." -ForegroundColor Red
+    Write-Host "Raw WSL output was: '$wsl_output'" -ForegroundColor DarkGray
+    Write-Host "Make sure WSL is running and awake." -ForegroundColor Yellow
     exit
 }
 
@@ -47,4 +54,4 @@ if (-not $fwRule) {
     Write-Host "   Firewall rule already exists. Skipping." -ForegroundColor Green
 }
 
-Write-Host "`nDone! Your PC's main IP addres is now exposed for your Pi." -ForegroundColor Green
+Write-Host "`nDone! Ollama is now accessible from your Raspberry Pi via your PC's main IP address." -ForegroundColor Green
